@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.npm-cache/
+.ai/
+.local/
+.env
+.env.*
+!.env.example
+!apps/web/.env.mock
+*.db
+*.db-*
+*.log

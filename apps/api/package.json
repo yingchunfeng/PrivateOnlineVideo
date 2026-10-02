@@ -1,0 +1,27 @@
+{
+  "name": "@online-video/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "db:migrate": "node --import tsx src/db/migrate-cli.ts",
+    "account:init": "node --env-file-if-exists=../../.env --import tsx src/modules/auth/account-cli.ts init",
+    "account:recover": "node --env-file-if-exists=../../.env --import tsx src/modules/auth/account-cli.ts recover",
+    "typecheck": "tsc -p tsconfig.check.json --noEmit",
+    "build": "tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.2",
+    "@node-rs/argon2": "2.2.1",
+    "@online-video/shared": "0.1.0",
+    "ali-oss": "6.23.0",
+    "better-sqlite3": "13.0.3",
+    "drizzle-orm": "0.45.3",
+    "fastify": "5.12.5",
+    "otpauth": "9.5.2"
+  },
+  "devDependencies": { "@types/ali-oss": "6.23.3", "@types/better-sqlite3": "9.6.0", "@types/node": "22.20.4", "tsx": "4.23.15" }
+}

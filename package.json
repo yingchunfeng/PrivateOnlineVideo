@@ -1,0 +1,21 @@
+{
+  "name": "private-video-library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22.21.1 <23", "npm": ">=10 <11" },
+  "packageManager": "npm@10.9.4",
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:api": "npm run build -w @online-video/shared && npm run dev -w @online-video/api",
+    "dev:web": "npm run build -w @online-video/shared && npm run dev -w @online-video/web",
+    "dev:web:mock": "npm run build -w @online-video/shared && npm run dev:mock -w @online-video/web",
+    "start:api": "npm run start -w @online-video/api",
+    "typecheck": "npm run build -w @online-video/shared && npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @online-video/shared && npm run build -w @online-video/api && npm run build -w @online-video/web",
+    "test": "npm run build -w @online-video/shared && npm run test --workspaces --if-present",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": { "typescript": "5.9.3" }
+}
