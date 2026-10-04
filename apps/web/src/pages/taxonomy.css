@@ -1,0 +1,12 @@
+.taxonomy-total { margin-left: 12px; }
+.taxonomy-deleted-toggle { min-height: 44px; color: var(--text-secondary); font-size: .86rem; }
+.taxonomy-tag-options { margin-top: 8px; }
+.taxonomy-tag-options summary { width: fit-content; min-height: 32px; padding: 4px 0; color: var(--text-secondary); font-size: .82rem; cursor: pointer; }
+.taxonomy-tag-options summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.taxonomy-section .cfg-col-actions button { min-height: 44px !important; }
+.taxonomy-section .cfg-col-actions > small { display: block; margin-top: 6px; }
+@media (max-width: 640px) {
+  .taxonomy-section .cfg-section-bar { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .taxonomy-section .cfg-col-actions { white-space: normal; }
+  .taxonomy-section .cfg-col-actions button + button { margin: 6px 0 0; }
+}

@@ -1,12 +1,13 @@
 import { readConfig, ConfigurationError } from "./core/config.js";
 import { startServer } from "./core/start.js";
 import { loadRuntimeAuth } from "./modules/auth/runtime.js";
+import { runtimeModules } from "./core/runtime.js";
 
 try {
   const config = readConfig();
   const runtime = await loadRuntimeAuth(config);
   let app;
-  try { app = await startServer(config, { auth: runtime.service, onClose: () => { runtime.database.close(); } }); }
+  try { app = await startServer(config, { auth: runtime.service, ...await runtimeModules(config, runtime.service, runtime.database), onClose: () => { runtime.database.close(); } }); }
   catch (error) { if (runtime.database.client.open) runtime.database.close(); throw error; }
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
   if (process.platform === "win32") signals.push("SIGBREAK");

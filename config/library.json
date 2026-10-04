@@ -1,0 +1,83 @@
+{
+  "mediaBaseUrl": "https://oss.meetdawn.top",
+  "objectPrefix": "onlineVideo/",
+  "categories": [
+    {
+      "id": "02b8c985-63e2-4107-bd6e-e8ec7f317802",
+      "name": "未分类",
+      "tags": [
+        "验收原片20261002",
+        "验收兼容20261002",
+        "测试1",
+        "测试2"
+      ],
+      "tagIds": [
+        "39e807f4-0af6-4daf-9f64-73ac31d3e60e",
+        "148da482-8953-4276-abac-ec4a120e0b6d",
+        "78c2088e-9fec-402b-9985-dbd6e724526f",
+        "65702689-80b5-4553-b489-6e0cc36b0845"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "043996f4-5413-45b9-b406-10e443ba4cfc",
+      "name": "验收空类B-1791035222053",
+      "tags": [],
+      "tagIds": [],
+      "enabled": false
+    },
+    {
+      "id": "320a4fce-fc9b-4586-a78d-cc626d566b34",
+      "name": "验收分类A-1791035222053-改名",
+      "tags": [
+        "验收标签-1791035222053-改名"
+      ],
+      "tagIds": [
+        "64a7121a-dcb0-41b3-9d0a-a1a785ca5b93"
+      ],
+      "enabled": false
+    },
+    {
+      "id": "3c2b99b0-d474-4043-9e67-c3f60ffd8ed4",
+      "name": "视频",
+      "tags": [
+        "验收原片20261002",
+        "验收兼容20261002",
+        "测试2"
+      ],
+      "tagIds": [
+        "39e807f4-0af6-4daf-9f64-73ac31d3e60e",
+        "148da482-8953-4276-abac-ec4a120e0b6d",
+        "65702689-80b5-4553-b489-6e0cc36b0845"
+      ],
+      "enabled": true
+    }
+  ],
+  "tagDefinitions": [
+    {
+      "id": "39e807f4-0af6-4daf-9f64-73ac31d3e60e",
+      "name": "验收原片20261002",
+      "enabled": false
+    },
+    {
+      "id": "148da482-8953-4276-abac-ec4a120e0b6d",
+      "name": "验收兼容20261002",
+      "enabled": false
+    },
+    {
+      "id": "64a7121a-dcb0-41b3-9d0a-a1a785ca5b93",
+      "name": "验收标签-1791035222053-改名",
+      "enabled": false
+    },
+    {
+      "id": "78c2088e-9fec-402b-9985-dbd6e724526f",
+      "name": "测试1",
+      "enabled": true
+    },
+    {
+      "id": "65702689-80b5-4553-b489-6e0cc36b0845",
+      "name": "测试2",
+      "enabled": true
+    }
+  ]
+}

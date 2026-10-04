@@ -6,8 +6,11 @@ import { ConfigurationError, readConfig } from "./core/config.js";
 import { registerErrorHandlers } from "./core/errors.js";
 import type { MediaRegistration } from "./core/contracts/index.js";
 import { assertMediaDependencies } from "./core/contracts/index.js";
-import type { AuthService } from "./modules/auth/service.js";
+import { AuthService } from "./modules/auth/service.js";
 import { registerAuthModule } from "./modules/auth/routes.js";
+import { registerBackendModule } from "./modules/catalog/routes.js";
+import type { BackendDependencies } from "./modules/catalog/routes.js";
+import { registerProgressModule } from "./modules/progress/routes.js";
 
 export interface BuildAppOptions {
   config?: AppConfig;
@@ -15,14 +18,15 @@ export interface BuildAppOptions {
   logStream?: { write(line: string): void };
   media?: MediaRegistration;
   auth?: AuthService;
+  backend?: BackendDependencies;
   onClose?: () => void | Promise<void>;
 }
 /** 只构建应用，不监听端口；后续业务模块由此统一装配。 */
 export async function buildApp(options: BuildAppOptions = {}) {
   const config = options.config ?? readConfig();
-  if (config.environment === "production") {
-    throw new ConfigurationError("生产安全模块尚未交付，CORE-01 拒绝生产装配");
-  }
+  if (config.environment === "production" && (!options.auth || !options.backend || !options.media || options.media.dependencies.auth !== options.auth || options.backend.auth !== options.auth)) throw new ConfigurationError("生产必须装配真实鉴权、SQL和媒体模块");
+  if (config.environment === "production" && (!(options.auth instanceof AuthService) || options.auth.database !== options.backend!.database || !options.auth.settings.secureCookie || options.auth.settings.allowedOrigins.some(origin => !origin.startsWith("https://")))) throw new ConfigurationError("生产必须使用同一SQLite的真实AuthService、安全Cookie和HTTPS Origin");
+  if (options.backend && (options.backend.config !== config || (options.auth && options.backend.auth !== options.auth))) throw new ConfigurationError("后端模块必须复用应用配置及真实AuthGuard");
   if (options.media) assertMediaDependencies(config, options.media);
   const app = Fastify({
     logger: options.logger === false ? false : {
@@ -53,6 +57,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     } } }
   }, async () => ({ data: { status: "ok" } }));
   if (options.auth) registerAuthModule(app, options.auth);
+  if (options.backend) { await registerBackendModule(app, options.backend); registerProgressModule(app, options.backend); }
   if (options.media) {
     try { await options.media.register(app, options.media.dependencies); }
     catch (error) { await app.close(); throw error; }

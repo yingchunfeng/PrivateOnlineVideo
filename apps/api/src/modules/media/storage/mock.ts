@@ -51,6 +51,14 @@ export class MockStorageAdapter implements StorageAdapter {
     this.uploads.set(uploadId, { key, contentType: input.contentType, parts: new Map() });
     return { uploadId };
   }
+  async putImage(input: { object: import("../../../core/contracts/index.js").StorageObjectRef; bytes: Buffer; contentType: "image/jpeg"; signal: AbortSignal }): Promise<StorageMetadata> {
+    checkAborted(input.signal);
+    const key = this.scope.key(input.object);
+    if (this.objects.has(key)) throw new HttpError("UPLOAD_STATE_CONFLICT");
+    if (input.bytes.length < 1 || input.bytes.length > 1024 * 1024 || input.contentType !== "image/jpeg") throw new HttpError("VALIDATION_ERROR");
+    this.seed(key, input.bytes, input.contentType);
+    return this.head(input);
+  }
   async uploadPart(input: Parameters<StorageAdapter["uploadPart"]>[0]) {
     checkAborted(input.signal);
     const entry = this.uploads.get(input.uploadId);

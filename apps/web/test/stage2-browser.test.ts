@@ -1,0 +1,197 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import OSS from "ali-oss";
+import { chromium, expect } from "@playwright/test";
+import { createServer } from "vite";
+import { startLocalOss } from "../../api/test/integration/local-oss-server";
+import { buildApp } from "../../api/src/app";
+import { readConfig } from "../../api/src/core/config";
+import { openDatabase, WORKSPACE_ROOT } from "../../api/src/db/database";
+import { createRepositories } from "../../api/src/db/repositories";
+import { AuthService, initializeAccount } from "../../api/src/modules/auth/service";
+import { readAuthSettings } from "../../api/src/modules/auth/settings";
+import { totp } from "../../api/src/modules/auth/crypto";
+import { createMediaModule } from "../../api/src/modules/media/index";
+import { OssStorageAdapter } from "../../api/src/modules/media/storage/oss";
+import type { OssClient } from "../../api/src/modules/media/storage/oss";
+import { OssPresignedSourceProvider } from "../../api/src/modules/media/storage/signing";
+import type { MediaDependencies } from "../../api/src/core/contracts/index";
+
+test("阶段2手机浏览器：隔离真SQLite/Auth/业务HTTP和本地OSS协议完整链（非实云/真机）", async t => {
+  const identity = { bucket: "test-bucket", region: "cn-hangzhou", prefix: "onlineVideo/", accessKeyId: "browser-local-sts", accessKeySecret: "browser-local-secret", stsToken: "browser-local-token" };
+  const protocol = await startLocalOss(identity); t.after(() => protocol.close());
+  const directory = resolve(WORKSPACE_ROOT, ".local/tests", `stage2-browser-${Date.now()}-${randomUUID()}`);
+  await mkdir(directory, { recursive: true }); const databasePath = resolve(directory, "application.db"); new Database(databasePath).close();
+  let database = openDatabase(databasePath, { initialize: true }); const encryptionKey = randomBytes(32);
+  const credentials = await initializeAccount(database, encryptionKey, "隔离浏览器测试");
+  let authClock = Date.now(); const now = () => new Date(authClock + Date.now() - startedAt); const startedAt = Date.now();
+  const settings = readAuthSettings("test", {});
+  const config = readConfig({ NODE_ENV: "test", STORAGE_DRIVER: "oss", PLAYBACK_MODE: "oss", USAGE_TIMEZONE: "Asia/Shanghai", MAX_PLAYBACK_SESSIONS: "3",
+    MAX_UPLOAD_BYTES: "2147483648", UPLOAD_PART_SIZE_BYTES: "262144", MAX_UPLOAD_CONCURRENCY: "2", PLAYBACK_SESSION_TTL_MS: "120000",
+    MAX_AUTHORIZATIONS_PER_MINUTE: "120", MEDIA_REQUESTS_PER_MINUTE: "600", IMPORT_PREVIEW_TTL_MS: "600000", MAX_IMPORT_PREVIEWS: "16",
+    OSS_REGION: "cn-hangzhou", OSS_BUCKET: identity.bucket, OSS_OBJECT_PREFIX: identity.prefix, OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com",
+    OSS_NETWORK: "public", OSS_ALLOW_PUBLIC_NETWORK: "true", OSS_PLAYBACK_ENDPOINT: "https://media.example.invalid", OSS_CREDENTIAL_FILE: resolve(directory, "unused.json"),
+    OSS_ROLE_ARN: "acs:ram::123456789:role/test", OSS_STS_DURATION_SECONDS: "3600", OSS_STS_REFRESH_BEFORE_SECONDS: "300", OSS_SIGNED_URL_TTL_SECONDS: "3600", OSS_CLOCK_SKEW_SECONDS: "30" });
+  const provider = { get: async () => ({ ...identity, expiration: new Date(Date.now() + 60000).toISOString() }) };
+  const storage = new OssStorageAdapter({ bucket: identity.bucket, region: "cn-hangzhou", endpoint: config.oss!.endpoint, network: "public", allowPublicNetwork: true, objectPrefix: identity.prefix, credentialFile: "unused-local-test" }, input => new OSS({ ...input, endpoint: protocol.endpoint, cname: true }) as unknown as OssClient, provider.get);
+  const sources = new OssPresignedSourceProvider({ bucket: identity.bucket, region: "cn-hangzhou", endpoint: protocol.endpoint, objectPrefix: identity.prefix, ttlSeconds: 12, safetySeconds: 1, renewBeforeSeconds: 4, kind: "test" }, provider, input => new OSS(input));
+  // 已有合成VP8 fixture用于浏览器播放；分析器明确受控注入，不能充当真实FFprobe证据。
+  const metadata = { inspect: async () => ({ status: "ready" as const, durationSeconds: 12, codec: "vp8（本地合成样例）", width: 640, height: 360, playable: true }) };
+  let modeConfig = config;
+  const assemble = async () => {
+    const auth = new AuthService(database, encryptionKey, settings, now);
+    const dependencies: MediaDependencies = { ...createRepositories(database, now), kind: "test", config: modeConfig, auth, storage, sources, now };
+    return buildApp({ config: modeConfig, logger: false, auth, backend: { database, auth, config: modeConfig, now }, media: { register: createMediaModule({ ...config.media!, metadata }), dependencies } });
+  };
+  let app = await assemble(); let apiPort = 0;
+  t.after(async () => { await app.close(); if (database.client.open) database.close(); });
+  await app.listen({ host: "127.0.0.1", port: 0 }); apiPort = (app.server.address() as { port: number }).port;
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", server: { port: 0, proxy: { "/api": { target: `http://127.0.0.1:${apiPort}` } } },
+    define: { "import.meta.env.VITE_MEDIA_ORIGIN": JSON.stringify(protocol.endpoint), "import.meta.env.VITE_MEDIA_PREFIX": JSON.stringify("/onlineVideo/"), "import.meta.env.VITE_ALLOW_LOCAL_MEDIA_HTTP": JSON.stringify("true") } });
+  t.after(() => vite.close()); await vite.listen(); const origin = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
+  settings.allowedOrigins.splice(0, settings.allowedOrigins.length, origin);
+  const browser = await chromium.launch({ channel: "msedge", headless: true }); t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, reducedMotion: "reduce", acceptDownloads: true });
+  await context.addInitScript("window.__name = (fn) => fn;"); const page = await context.newPage(); page.setDefaultTimeout(8000);
+  const qaDir = fileURLToPath(new URL(`../qa/stage2-${new Date().toISOString().replace(/[:.]/g, "-")}`, import.meta.url)); await mkdir(qaDir, { recursive: true });
+  console.log(`Stage2 real HTTP QA screenshots: ${qaDir}`);
+  const login = async () => { await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByLabel("动态验证码").fill(totp(credentials.totpSecret).generate({ timestamp: now().getTime() })); await page.getByRole("button", { name: "进入视频库" }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
+  const fixtureBytes = await readFile(new URL("./fixtures/demo.webm", import.meta.url));
+  const uploadBytes = Buffer.concat([fixtureBytes, Buffer.alloc(262145 - fixtureBytes.length)]);
+  let videoId = ""; let uploadId = ""; const mediaRequests: string[] = []; page.on("request", request => { if (request.resourceType() === "media") mediaRequests.push(new URL(request.url()).origin); });
+  await t.test("真HTTP登录、HttpOnly Cookie、刷新恢复与组织管理", async () => {
+    await page.goto(origin); await login(); await expect(page.getByRole("heading", { name: "这里还没有视频" })).toBeVisible();
+    const cookie = (await context.cookies()).find(value => value.name === "ov_session"); assert.ok(cookie?.httpOnly); assert.equal(cookie?.sameSite, "Strict");
+    await page.reload(); await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
+    await page.getByRole("link", { name: "分类", exact: true }).click();
+    const create = async (kind: string, name: string) => { await page.getByRole("button", { name: kind, exact: true }).click(); await page.getByLabel(`${kind}名称`, { exact: true }).fill(name); await page.getByRole("button", { name: `新建${kind}`, exact: true }).click(); await expect(page.getByLabel(`重命名 ${name}`)).toBeVisible(); };
+    await create("分类", "旅行"); await create("分组", "2026旅行"); await create("标签", "杭州"); await create("标签", "夜景");
+    await page.getByLabel("标签名称", { exact: true }).fill("杭州"); await page.getByRole("button", { name: "新建标签", exact: true }).click(); await expect(page.getByRole("alert")).toBeVisible();
+    await page.screenshot({ path: `${qaDir}/phone-organizations.png`, fullPage: true });
+  });
+  await t.test("分片上传/服务端组织快照/唯一SQL登记与AND筛选", async () => {
+    await page.getByRole("link", { name: "上传", exact: true }).click();
+    await expect(page.locator('input[type="file"]')).toBeEnabled(); await page.locator('input[type="file"]').setInputFiles({ name: "原片.webm", mimeType: "video/webm", buffer: uploadBytes });
+    await page.getByLabel("视频标题", { exact: true }).fill("杭州夜景"); await page.getByLabel("视频分类").selectOption({ label: "旅行" });
+    await page.getByRole("checkbox", { name: "2026旅行", exact: true }).check(); await page.getByRole("checkbox", { name: "杭州", exact: true }).check(); await page.getByRole("checkbox", { name: "夜景", exact: true }).check();
+    await page.route("**/api/uploads/*/parts/2", async route => { await new Promise(resolve => setTimeout(resolve, 1000)); await route.continue().catch(() => {}); });
+    await page.getByRole("button", { name: "开始分片上传" }).click(); await expect.poll(() => (database.client.prepare("SELECT count(*) n FROM upload_parts").get() as { n: number }).n).toBe(1);
+    await page.getByRole("button", { name: "暂停上传", exact: true }).click(); await expect(page.getByText("已暂停，可校验续传", { exact: true })).toBeVisible(); await page.unroute("**/api/uploads/*/parts/2");
+    await page.reload(); await page.getByRole("button", { name: /原片.webm.*读取任务/ }).click();
+    await page.locator('input[type="file"]').setInputFiles({ name: "原片.webm", mimeType: "video/webm", buffer: Buffer.alloc(uploadBytes.length, 9) }); await page.getByRole("button", { name: "核对并继续上传", exact: true }).click(); await expect(page.getByRole("alert")).toContainText("不能续传");
+    await page.locator('input[type="file"]').setInputFiles({ name: "原片.webm", mimeType: "video/webm", buffer: uploadBytes }); await page.getByRole("button", { name: "核对并继续上传", exact: true }).click(); await expect(page.getByText("服务端已确认登记", { exact: true })).toBeVisible();
+    await expect(page.getByText("服务端保存的组织信息", { exact: true })).toBeVisible();
+    const record = database.client.prepare("SELECT id, video_id FROM upload_tasks").get() as { id: string; video_id: string }; uploadId = record.id; videoId = record.video_id;
+    assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 1); assert.equal(protocol.objects.size, 1);
+    assert.equal((database.client.prepare("SELECT count(*) n FROM video_tag_links WHERE removed_at IS NULL").get() as { n: number }).n, 2);
+    await page.reload(); await page.getByRole("button", { name: /原片.webm.*读取任务/ }).click(); await expect(page.getByText("服务端已确认登记", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "视频库", exact: true }).click();
+    await page.getByRole("checkbox", { name: "2026旅行", exact: true }).check(); await page.getByRole("checkbox", { name: "杭州", exact: true }).check(); await page.getByRole("checkbox", { name: "夜景", exact: true }).check(); await expect(page.locator(".video-card")).toHaveCount(1);
+    await page.screenshot({ path: `${qaDir}/phone-library.png`, fullPage: true });
+  });
+  await t.test("真实签名直连Range、短期自动续签、位置/暂停状态、后台恢复与原片附件", async () => {
+    await page.goto(`${origin}/videos/${videoId}`); await page.getByRole("button", { name: "开始播放", exact: true }).click(); const video = page.locator("video");
+    await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+    await video.evaluate(async node => { const media = node as HTMLVideoElement; await media.play(); media.currentTime = 4; media.pause(); });
+    await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).currentTime)).toBeGreaterThan(3.5);
+    const initialSource = await video.getAttribute("src"); await expect.poll(async () => (await video.getAttribute("src")) !== initialSource, { timeout: 15000 }).toBe(true);
+    await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+    assert.ok(await video.evaluate(node => (node as HTMLVideoElement).paused)); assert.ok(Math.abs(await video.evaluate(node => (node as HTMLVideoElement).currentTime) - 4) < .6);
+    const pausedSource = await video.getAttribute("src"); await video.evaluate(async node => { const media = node as HTMLVideoElement; media.playbackRate = .25; await media.play(); });
+    await expect.poll(async () => (await video.getAttribute("src")) !== pausedSource, { timeout: 15000 }).toBe(true); await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).paused)).toBe(false);
+    await video.evaluate(node => { const media = node as HTMLVideoElement; media.currentTime = 5; media.pause(); });
+    await page.evaluate(() => { Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" }); document.dispatchEvent(new Event("visibilitychange")); });
+    const downloadEvent = page.waitForEvent("download"); await page.getByRole("button", { name: "下载原片", exact: true }).click(); const download = await downloadEvent;
+    const downloaded = await readFile((await download.path())!); assert.deepEqual(downloaded, uploadBytes);
+    assert.ok(protocol.requests.some(request => request.signed && request.status === 206)); assert.ok(mediaRequests.every(value => value === protocol.endpoint));
+    await page.screenshot({ path: `${qaDir}/phone-direct-player.png`, fullPage: true });
+    let errorRenewals = 0; const observeRenewal = (request: import("@playwright/test").Request) => { if (new URL(request.url()).pathname.endsWith("/source")) errorRenewals++; }; page.on("request", observeRenewal);
+    await page.route(`${protocol.endpoint}/**`, async route => { if (route.request().resourceType() === "media") await route.fulfill({ status: 403, body: "Local expired authorization test" }); else await route.continue(); });
+    await video.evaluate(node => node.dispatchEvent(new Event("error")));
+    await expect(page.getByRole("button", { name: "手动重新准备播放", exact: true })).toBeVisible(); assert.ok(errorRenewals <= 2); assert.ok(errorRenewals > 0);
+    await page.unroute(`${protocol.endpoint}/**`); page.off("request", observeRenewal);
+    await page.getByRole("button", { name: "手动重新准备播放", exact: true }).click(); await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+    await page.getByRole("link", { name: "安全", exact: true }).click(); await expect(page.getByText("未知 · 尚未同步", { exact: true })).toBeVisible(); await expect(page.getByText("剩余应用额度", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: `${qaDir}/phone-oss-usage.png`, fullPage: true });
+  });
+  await t.test("真DB重启保留/归档历史/软解绑/撤销后续签拒绝与显式proxy回归", async () => {
+    await page.goto(`${origin}/videos/${videoId}`); await expect(page.getByRole("button", { name: /从 0:0[4-6] 继续/ })).toBeVisible();
+    await app.close(); database.close(); database = openDatabase(databasePath); app = await assemble(); await app.listen({ host: "127.0.0.1", port: apiPort });
+    await page.reload(); await expect(page.getByRole("heading", { name: "杭州夜景", exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "分类", exact: true }).click(); await page.getByRole("button", { name: "分组", exact: true }).click();
+    await page.getByLabel("重命名 2026旅行").locator("..").locator("..").getByRole("button", { name: "归档", exact: true }).click();
+    await page.getByRole("button", { name: "标签", exact: true }).click(); await page.getByLabel("重命名 夜景").locator("..").locator("..").getByRole("button", { name: "归档", exact: true }).click();
+    await page.goto(`${origin}/videos/${videoId}`); await page.getByRole("button", { name: "编辑信息", exact: true }).click();
+    await page.getByLabel("视频标题", { exact: true }).fill("修改后的杭州夜景"); await page.getByRole("button", { name: "保存视频信息", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "修改后的杭州夜景", exact: true })).toBeVisible(); await expect(page.getByText("分组 · 2026旅行（已归档）", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "编辑信息", exact: true }).click(); await page.getByRole("checkbox", { name: /2026旅行/ }).click(); await expect(page.getByRole("checkbox", { name: /2026旅行/ })).toHaveCount(0); await page.getByRole("checkbox", { name: /夜景/ }).click(); await expect(page.getByRole("checkbox", { name: /夜景/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "保存视频信息", exact: true }).click(); await expect(page.getByRole("checkbox")).toHaveCount(0);
+    assert.equal((database.client.prepare("SELECT count(*) n FROM video_group_links WHERE removed_at IS NULL").get() as { n: number }).n, 0);
+    assert.equal((database.client.prepare("SELECT count(*) n FROM video_tag_links WHERE removed_at IS NULL").get() as { n: number }).n, 1);
+    await page.getByRole("button", { name: /从 0:0[4-6] 继续/ }).click(); await expect.poll(() => page.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+    const previousSource = await page.locator("video").getAttribute("src"); const sessionId = (database.client.prepare("SELECT id FROM playback_sessions WHERE closed_at IS NULL ORDER BY created_at DESC LIMIT 1").get() as { id: string }).id;
+    await page.getByRole("link", { name: "安全", exact: true }).click(); await page.getByRole("button", { name: "撤销当前会话", exact: true }).click(); await page.getByRole("button", { name: "确认撤销", exact: true }).click(); await expect(page.getByRole("heading", { name: "安全登录" })).toBeVisible();
+    assert.equal((await context.request.post(`${origin}/api/playback-sessions/${sessionId}/source`)).status(), 401); assert.equal((await fetch(previousSource!, { headers: { range: "bytes=0-0" } })).status, 206);
+    authClock += 30000; await login();
+    modeConfig = { ...config, playbackMode: "proxy", transferPolicy: { kind: "limited", limitBytes: 10 * 1048576 } };
+    await app.close(); app = await assemble(); await app.listen({ host: "127.0.0.1", port: apiPort });
+    await page.goto(`${origin}/videos/${videoId}`); await page.getByRole("button", { name: /继续|开始播放/ }).click();
+    await expect.poll(() => page.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+    assert.ok((await page.locator("video").getAttribute("src"))?.startsWith("/api/"));
+    await page.getByRole("link", { name: "安全", exact: true }).click(); await expect(page.getByText("本周期已传输", { exact: true })).toBeVisible();
+    const forwarded = database.client.prepare("SELECT COALESCE(SUM(transferred_bytes),0) n FROM usage_counters").get() as { n: number }; assert.ok(forwarded.n > 0);
+    await page.getByRole("button", { name: "退出登录", exact: true }).click(); await expect(page.getByRole("heading", { name: "安全登录" })).toBeVisible();
+    assert.equal(database.client.pragma("integrity_check", { simple: true }), "ok"); assert.deepEqual(database.client.pragma("foreign_key_check"), []);
+    assert.ok(uploadId); assert.equal((await context.request.get(`${origin}/api/uploads/${uploadId}`)).status(), 401);
+  });
+  await t.test("受保护已有对象预览分页/ID选择导入与组织持久化", async () => {
+    authClock += 30000; await login();
+    for (let index = 0; index < 101; index++) protocol.objects.set(`onlineVideo/import/导入样例-${String(index).padStart(3, "0")}.webm`, { bytes: fixtureBytes, etag: createHash("md5").update(fixtureBytes).digest("hex"), contentType: "video/webm" });
+    await page.goto(origin); await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); await page.getByRole("button", { name: "预览已有视频", exact: true }).click();
+    await expect(page.locator(".import-items").getByRole("checkbox")).toHaveCount(100);
+    await page.getByRole("button", { name: "下一批视频", exact: true }).click(); await expect(page.locator(".import-items").getByRole("checkbox")).toHaveCount(1);
+    await page.locator(".import-items").getByRole("checkbox", { name: /导入样例-100.webm/ }).check(); await page.locator(".import-panel").getByRole("checkbox", { name: "杭州", exact: true }).check();
+    await page.getByRole("button", { name: "导入选中的 1 项", exact: true }).click(); await expect(page.getByText("已登记 1 个视频；", { exact: false })).toBeVisible();
+    const imported = database.client.prepare("SELECT id FROM videos WHERE title=?").get("导入样例-100.webm") as { id: string }; assert.ok(imported);
+    assert.equal((database.client.prepare("SELECT count(*) n FROM video_tag_links WHERE video_id=? AND removed_at IS NULL").get(imported.id) as { n: number }).n, 1);
+    await page.reload(); await expect(page.getByRole("heading", { name: "导入样例-100.webm", exact: true })).toBeVisible();
+    assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 2);
+    const longTag = "很长的中文内容标签".repeat(9);
+    await page.getByRole("link", { name: "分类", exact: true }).click(); await page.getByRole("button", { name: "标签", exact: true }).click(); await page.getByLabel("标签名称", { exact: true }).fill(longTag); await page.getByRole("button", { name: "新建标签", exact: true }).click(); await expect(page.getByLabel(`重命名 ${longTag}`)).toBeVisible();
+    await page.goto(`${origin}/?page=2`); await page.getByRole("checkbox", { name: longTag, exact: true }).check(); await expect(page).not.toHaveURL(/page=2/); await expect(page.getByRole("heading", { name: "没有找到匹配的视频", exact: true })).toBeVisible();
+    const assertLayout = async () => { assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); assert.deepEqual(await page.locator("button:visible, select:visible, .check-row:visible").evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().height < 44).map(node => node.tagName)), []); };
+    await page.setViewportSize({ width: 320, height: 700 }); await assertLayout(); await page.evaluate(() => { document.documentElement.style.fontSize = "24px"; }); await assertLayout(); await page.screenshot({ path: `${qaDir}/phone-long-tags-150-percent.png`, fullPage: true });
+    await page.evaluate(() => { document.documentElement.style.fontSize = "16px"; }); await page.setViewportSize({ width: 812, height: 375 }); await assertLayout(); await page.screenshot({ path: `${qaDir}/landscape-organization-filter.png`, fullPage: true }); await page.setViewportSize({ width: 375, height: 812 });
+  });
+  await t.test("旧视频位置显式绑定：错key拒绝，ID/标题/归档组织/进度保留", async () => {
+    const legacyId = randomUUID(); const legacyKey = "onlineVideo/legacy/旧记录.webm";
+    const owner = (database.client.prepare("SELECT id FROM users").get() as { id: string }).id;
+    const category = (database.client.prepare("SELECT id FROM categories WHERE is_default=1").get() as { id: string }).id;
+    const group = (database.client.prepare("SELECT id FROM library_groups WHERE name=?").get("2026旅行") as { id: string }).id;
+    const timestamp = now().toISOString();
+    // 独立隔离库内模拟阶段1的仅key旧记录；正式库/用户对象完全不参与。
+    database.client.prepare("INSERT INTO videos(id,owner_id,title,category_id,duration_seconds,size_bytes,status,created_at,codec,width,height,playable,original_key,playback_key,thumbnail_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(legacyId, owner, "旧记录保留", category, 12, fixtureBytes.length, "ready", timestamp, "vp8", 640, 360, 1, legacyKey, legacyKey, null);
+    database.client.prepare("INSERT INTO video_group_links(owner_id,video_id,group_id,assigned_at,removed_at) VALUES(?,?,?,?,NULL)").run(owner, legacyId, group, timestamp);
+    database.client.prepare("INSERT INTO watch_progress(owner_id,video_id,position_seconds,updated_at) VALUES(?,?,?,?)").run(owner, legacyId, 3, timestamp);
+    protocol.objects.set(legacyKey, { bytes: fixtureBytes, etag: createHash("md5").update(fixtureBytes).digest("hex"), contentType: "video/webm" });
+    await page.goto(origin); await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); await page.getByRole("button", { name: "预览已有视频", exact: true }).click();
+    await page.getByRole("button", { name: "下一批视频", exact: true }).click(); await expect(page.getByLabel("登记方式", { exact: false })).toBeVisible();
+    await page.getByLabel("登记方式", { exact: false }).selectOption(legacyId);
+    await page.locator(".import-items").getByRole("checkbox", { name: /导入样例-100.webm/ }).check(); await page.getByRole("button", { name: "确认既有记录存储位置", exact: true }).click(); await expect(page.getByRole("alert")).toBeVisible();
+    await page.locator(".import-items").getByRole("checkbox", { name: /导入样例-100.webm/ }).uncheck(); await page.locator(".import-items").getByRole("checkbox", { name: /旧记录.webm/ }).check(); await page.getByRole("button", { name: "确认既有记录存储位置", exact: true }).click();
+    await expect(page.getByText("既有记录存储位置已确认；标题、组织与观看记录保留。", { exact: true })).toBeVisible();
+    const bound = await createRepositories(database, now).videos.findOwned(owner, legacyId); assert.equal(bound?.originalObject.kind, "registered"); assert.equal(bound?.video.title, "旧记录保留"); assert.equal(bound?.video.lastPositionSeconds, 3); assert.deepEqual(bound?.video.groupIds, [group]);
+    assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 3);
+  });
+  await t.test("真HTTP会话过期回到登录且禁止后续业务", async () => {
+    authClock += settings.sessionTtlMs + 1;
+    await page.reload(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
+    assert.equal((await context.request.get(`${origin}/api/videos/${videoId}`)).status(), 401);
+  });
+  await context.close();
+});

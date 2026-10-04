@@ -32,7 +32,7 @@ test("迁移版本/校验、单人和安全路径：拒绝测试库与未知数�
   const f = fixture();
   try {
     migrateDatabase(f.database.client);
-    assert.equal((f.database.client.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count, 1);
+    assert.equal((f.database.client.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count, 2);
     assert.throws(() => f.database.orm.insert(s.users).values({ id: "another", displayName: "用户2", passwordHash: "x", totpCipher: "x", createdAt: f.clock.at.toISOString() }).run());
     f.database.client.prepare("UPDATE schema_migrations SET checksum='changed'").run();
     assert.throws(() => migrateDatabase(f.database.client));

@@ -74,6 +74,7 @@
 -- 22 video_assets           视频与原片/播放/封面对象关系表
 -- 23 upload_storage_objects 上传任务与存储对象关系表
 -- 24 storage_operations     存储操作与数据库登记过程表
+-- 25 source_authorizations  无秘密的签发/续签/下载审计表（第二阶段源码新增）
 -- ================================================================
 
 -- 第2步：检查连接并启用外键；必须在事务开始前设置外键开关。
@@ -116,9 +117,11 @@ CREATE TABLE categories ( -- 创建视频主分类表，archived_at在建表时�
   sort_order INTEGER NOT NULL DEFAULT 0,        -- 排序值
   is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)), -- 1表示“未分类”
   created_at TEXT NOT NULL,                     -- 创建时间
-  archived_at TEXT                             -- 归档时间；NULL表示活动分类
+  archived_at TEXT,                            -- 归档时间；NULL表示活动分类
+  name_key TEXT NOT NULL DEFAULT ''             -- NFKC/trim/小写名称键，由应用生成
 ); -- 结束视频主分类表定义
 CREATE UNIQUE INDEX default_category ON categories(owner_id) WHERE is_default = 1; -- 每个用户最多有一个默认分类
+CREATE UNIQUE INDEX stage2_category_names ON categories(owner_id,name_key); -- 同人分类名称唯一，包括归档项
 -- 上面的部分唯一索引保证每个用户最多有一个默认分类。
 
 -- 04【视频资料表】只保存资料和位置，不把视频二进制放进SQLite。
@@ -139,7 +142,7 @@ CREATE TABLE videos ( -- 创建视频资料表，存资料与对象Key，视频�
   playback_key TEXT NOT NULL,                   -- 第一阶段播放版本Key，保留兼容
   thumbnail_key TEXT                           -- 第一阶段封面Key，无封面为NULL
 ); -- 结束视频资料表定义
-CREATE UNIQUE INDEX videos_owner_object ON videos(owner_id, original_key); -- 第一阶段对象登记去重
+CREATE INDEX stage2_legacy_video_key ON videos(owner_id, original_key); -- 旧key查询索引，完整身份去重由对象/资产维护
 CREATE UNIQUE INDEX stage2_videos_owner_id ON videos(owner_id, id);        -- 供归属复合外键使用
 
 -- 05【上传任务表】保存断点续传任务；上传尚未完成时可以没有video_id。
@@ -188,7 +191,9 @@ CREATE TABLE playback_sessions ( -- 创建播放会话表，用于播放器并�
   expires_at TEXT NOT NULL,                     -- 活动会话到期时间
   last_seen_at TEXT NOT NULL,                   -- 最近心跳时间
   closed_at TEXT,                              -- 关闭时间，NULL表示尚未关闭
-  ttl_ms INTEGER NOT NULL CHECK(ttl_ms > 0)      -- 心跳续期长度，毫秒
+  ttl_ms INTEGER NOT NULL CHECK(ttl_ms > 0),     -- 心跳续期长度，毫秒
+  mode TEXT NOT NULL DEFAULT 'proxy' CHECK(mode IN ('proxy','oss')), -- 应用播放模式，旧记录保持proxy
+  source_expires_at TEXT                       -- 最近源授权到期，不保存完整签名URL
 ); -- 结束播放会话表定义
 CREATE INDEX playback_owner_active ON playback_sessions(owner_id, expires_at, closed_at); -- 加速查询用户尚未过期且未关闭的播放会话
 
@@ -346,7 +351,7 @@ CREATE TABLE storage_objects ( -- 创建存储对象表，保存OSS位置、版�
       AND content_type IS NOT NULL AND length(content_type) > 0 AND verified_at IS NOT NULL)) -- 已核验还必须有非空类型和核验时间
 ); -- 结束存储对象表定义
 CREATE UNIQUE INDEX stage2_storage_identity -- 创建对象位置唯一索引，避免同一对象版本重复登记
-ON storage_objects(owner_id, provider, bucket, region, object_key, coalesce(version_id, '')); -- 按归属和完整位置去重，NULL版本按空串比较
+ON storage_objects(provider, bucket, region, object_key, coalesce(version_id, '')); -- 完整位置全局唯一，阻止跨owner重登记
 -- coalesce把NULL版本转换为空串用于唯一判断，防止无版本对象被重复登记。
 
 -- 22【视频资产关系表】指定哪一个对象是视频原片/播放版本/封面。
@@ -428,12 +433,25 @@ BEGIN -- 开始触发器执行内容
 END; -- 结束该触发器定义
 
 -- 全部语句成功后提交；如果前面有错误，不要单独执行本行。
+CREATE UNIQUE INDEX stage2_original_asset_identity ON video_assets(owner_id,storage_object_id) WHERE asset_role='original'; -- 原片身份只登记一个视频
+CREATE TABLE source_authorizations ( -- 应用签发记录，不存AK/Token/完整URL
+  id TEXT PRIMARY KEY, -- 审计ID
+  owner_id TEXT NOT NULL REFERENCES users(id), -- 账号归属
+  login_session_id TEXT NOT NULL REFERENCES login_sessions(id), -- 实际登录会话
+  video_id TEXT NOT NULL, -- 本人视频
+  playback_session_id TEXT REFERENCES playback_sessions(id), -- 下载可为NULL
+  purpose TEXT NOT NULL CHECK(purpose IN ('playback','renewal','download')), -- 签发用途
+  source_expires_at TEXT NOT NULL, -- 已发源的实际到期
+  created_at TEXT NOT NULL, -- 签发时间
+  FOREIGN KEY(owner_id,video_id) REFERENCES videos(owner_id,id) -- 同人归属外键
+); -- 结束签发审计表
+CREATE INDEX stage2_authorizations_owner_time ON source_authorizations(owner_id,created_at); -- 统计和跨进程频控
 COMMIT; -- 提交前面全部建表、索引和触发器，提交成功才算结构创建完成
 
 -- 【执行后的只读检查】查询返回结果，不会插入/修改数据。
 SELECT name AS table_name -- 查询表名，并把结果列显示为table_name
 FROM sqlite_master -- 从SQLite保存表、索引和触发器定义的系统目录查询
 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' -- 只列出业务/迁移表，排除SQLite内部表
-ORDER BY name;                   -- 应有上面目录列出的24张表
+ORDER BY name;                   -- 新空库版本应有25张表；现有手工24表不会自动变化
 PRAGMA foreign_key_check;       -- 正常应返回0行（没有外键错误）
 PRAGMA integrity_check;         -- 正常应返回ok

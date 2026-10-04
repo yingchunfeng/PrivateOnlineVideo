@@ -1,35 +1,39 @@
-# 前后端与媒体模块契约 V0.4
+# 前后端与媒体模块契约 V0.5
 
-第二阶段提案另见 [STAGE2_API_CONTRACT](STAGE2_API_CONTRACT.md)，目前尚未修改可编译DTO或实现新增路由；以新对话P2-CORE-01冻结后的契约为准。
+第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；详见[第二阶段契约](STAGE2_API_CONTRACT.md)与[后端交接](STAGE2_BACKEND_HANDOFF.md)。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
 
-日期：2026-10-01  
-性质：CORE-02/03 已交付真实 SQLite Repository 与账户登录；默认 API 入口注册 health/auth，catalog/progress/settings 与媒体统一装配仍待 CORE-04～06  
+日期：2026-10-02
+
+性质：真实鉴权/SQLite组织、视频库、观看记录、分模式用量及媒体统一装配已实现，运行须显式资源配置与版本2库
 依据：[PRD](../PRD.md)、[任务总看板](../TASKS.md)
 
 ## 1. 基本约定
 
 - 接口统一位于 `/api`，JSON 字段采用 camelCase；输出时间统一为 UTC ISO 8601 字符串（例如 `2026-10-01T00:00:00.000Z`），周期结束时间为不包含的上界。统计日按 `timezone` 的 IANA 时区划分，时间戳仍输出 UTC。
 - ID 使用不可预测的字符串；知道 ID 不代表拥有访问权。
-- 本轮只允许 `playbackMode = "proxy"`。未来的 `oss_direct` 不在本轮实现范围。
+- `PlaybackMode = "proxy" | "oss"`，由PLAYBACK_MODE显式选择；真实目标oss直连、proxy兼容，无隐式回退。
 - 同源 Cookie 会话；所有写接口（包括分片 PUT）携带 `x-csrf-token`，由 AuthGuard 同时校验 Cookie 会话、CSRF 和可信来源。登录前的来源检查由 CORE-03 实现，登录请求不要求已有登录态的 CSRF token。前端不得把会话或 OSS 长期密钥存入 localStorage。
 - 成功的 JSON 响应结构为 `{ data: T }`；分页数据为 `{ data: { items, page, pageSize, total } }`。
 - 错误结构为 `{ error: { code, message, requestId } }`，不包含堆栈、凭证或敏感路径。
 - 流式媒体响应与原始分片上传不套 JSON 数据包装。
 - 所有 byte 数值必须是非负安全整数，后台设置明确的上传、分片和总量限制。
-- 页面使用的资源地址为站内相对路径。对象路径不由前端任意指定为后端读取目标。
+- 控制API/封面保持站内相对路径；oss源为后端固定HTTPS域名STS/V4签名URL，按模式校验。对象定位不由客户端任意指定。
 
 ## 2. 共享数据结构
 
 | DTO | 核心字段 |
 | --- | --- |
 | CurrentUser | `id`, `displayName`, `totpEnabled` |
-| Category | `id`, `name`, `sortOrder` |
-| VideoSummary | `id`, `title`, `categoryId`, `durationSeconds`, `sizeBytes`, `status`, `thumbnailUrl`, `createdAt` |
+| Category | `id`, `name`, `sortOrder`, `isDefault`, `archivedAt` |
+| LibraryGroup / Tag | id/name/createdAt/updatedAt/archivedAt；分组另description/sortOrder |
+| VideoSummary | `id`, `title`, `categoryId`, `groupIds`, `tagIds`, `durationSeconds`, `sizeBytes`, `status`, `thumbnailUrl`, `createdAt` |
 | VideoDetail | VideoSummary 字段及 `codec`, `width`, `height`, `playable`, `lastPositionSeconds` |
-| PlaybackSession | `id`, `videoId`, `mode: "proxy"`, `sourceUrl`, `expiresAt` |
-| UploadTask | `id`, `videoId`, `fileName`, `sizeBytes`, `partSizeBytes`, `status`, `uploadedParts`, `createdAt` |
+| PlaybackSession | id/videoId/expiresAt；proxy.sourceUrl站内path；oss.sourceUrl/sourceExpiresAt/renewAfter |
+| PlaybackHeartbeat | id/videoId/mode/expiresAt，无源字段，不自动续签 |
+| DownloadAuthorization | videoId/mode=oss/sourceUrl/sourceExpiresAt/fileName |
+| UploadTask | id/videoId/fileName/sizeBytes/partSizeBytes/status/uploadedParts/createdAt，以及title/categoryId/groupIds/tagIds组织快照 |
 | UploadedPart | `partNumber`, `sizeBytes`, `checksum`；OSS 内部状态由服务端维护 |
-| ApplicationUsage | `periodStart`, `periodEnd`, `timezone`, `transferredBytes`, `limitMode`, `limitBytes`, `activePlaybackSessions`, `source: "application_proxy"` |
+| ApplicationUsage | application_proxy保持真实字节/三态限额；oss_direct/not_synced的transferredBytes/cloudStatisticsAt=null，limitMode=not_applicable，独立签发次数/应用会话数 |
 | LoginSession | `id`, `createdAt`, `lastSeenAt`, `expiresAt`, `isCurrent` |
 
 `status` 初始枚举：
@@ -67,13 +71,15 @@ CORE-03 已固定本地命令 `account:init` 和 `account:recover`：初次创�
 | --- | --- | --- |
 | GET | `/api/categories` | 分类列表 |
 | POST | `/api/categories` | 新建分类；`name`, `sortOrder` |
-| PATCH | `/api/categories/:categoryId` | 重命名/排序，不永久删除 |
-| GET | `/api/videos` | 分页筛选；`categoryId`, `q`, `page`, `pageSize` |
+| PATCH | `/api/categories/:categoryId` | 重命名/排序/archived归档恢复，默认项不可归档 |
+| GET/POST/PATCH | `/api/groups`、`/api/tags`及/:id | 本人组织列表/创建/修改，列表支持includeArchived=true |
+| GET | `/api/videos` | 分页筛选categoryId/q/groupIds/tagIds；组标签逗号分隔、跨维度AND、多选全命中，page1/pageSize24默认/max100 |
 | GET | `/api/videos/:videoId` | 视频详情与兼容状态 |
-| PATCH | `/api/videos/:videoId` | 修改 `title`, `categoryId` |
+| PATCH | `/api/videos/:videoId` | 局部修改title/categoryId/groupIds/tagIds；[]软解绑，省略保持 |
 | GET | `/api/videos/:videoId/progress` | 本人的观看位置 |
 | PUT | `/api/videos/:videoId/progress` | 保存 `positionSeconds`，校验范围 |
-| GET | `/api/settings/usage` | 应用代理流量与限制，不作为云账单 |
+| GET | `/api/settings/usage` | 按模式返回代理实际字节或OSS未知用量，不作为云账单 |
+| GET | `/api/settings/limits` | 鉴权后的上传/分片/并发/签发限额 |
 
 ### 3.3 视频播放与封面：子代理 2
 
@@ -81,11 +87,13 @@ CORE-03 已固定本地命令 `account:init` 和 `account:recover`：初次创�
 | --- | --- | --- |
 | POST | `/api/videos/:videoId/playback-sessions` | 鉴权后创建播放会话并返回 PlaybackSession |
 | POST | `/api/playback-sessions/:sessionId/heartbeat` | 维护播放会话活动状态 |
+| POST | `/api/playback-sessions/:sessionId/source` | 同会话重新鉴权续签，复用并发槽 |
+| POST | `/api/videos/:videoId/download-authorizations` | 本人数据库原片下载STS签名，独立频控与审计 |
 | POST | `/api/playback-sessions/:sessionId/close` | 关闭播放会话；不删除视频 |
 | GET/HEAD | `/api/videos/:videoId/stream?playbackSessionId=...` | A 模式视频流与范围读取 |
 | GET/HEAD | `/api/videos/:videoId/thumbnail` | 受保护封面读取 |
 
-播放会话 ID 只用于并发与计量关联，不代替会话 Cookie。每个 Range 请求都检查账户、播放会话归属及活动状态；未登录请求不能通过复制 sourceUrl 获得视频。
+播放会话ID不代替Cookie；proxy每次Range都检查归属与活动状态。oss在发放/续签/下载前重查真实登录/owner，URL本身为临时授权，在有效期可被重复使用。退出/close拒绝后续授权，已发URL不会立即失效；应用3会话限制不等于OSS连接数或字节费用封顶。
 
 `HEAD` 返回必要的类型、长度和范围信息；`GET` 支持合法范围请求。错误范围、客户端断开、并发和流量超限的响应由 MEDIA-02/03 统一验证。流式响应开始后发生错误，应中止流并记录，不能向已发送的视频流追加 JSON 错误。
 
@@ -93,7 +101,7 @@ CORE-03 已固定本地命令 `account:init` 和 `account:recover`：初次创�
 
 | 方法 | 路由 | 用途 |
 | --- | --- | --- |
-| POST | `/api/uploads` | 创建任务；`fileName`, `sizeBytes`, `title`, `categoryId` |
+| POST | `/api/uploads` | fileName/sizeBytes/title/categoryId及可选groupIds/tagIds，组织/对象/操作先持久化 |
 | GET | `/api/uploads/:uploadId` | 获取分片大小、已完成分片及状态 |
 | PUT | `/api/uploads/:uploadId/parts/:partNumber` | 原始分片数据，`Content-Type: application/octet-stream` |
 | POST | `/api/uploads/:uploadId/complete` | 校验分片并完成 OSS 对象，登记真实视频状态 |
@@ -119,6 +127,8 @@ OSS 上传 ID、对象路径和 ETag 的权威状态由服务端维护，客户�
 
 预览请求必须提供字符串 `prefix`。明确空串表示使用服务端配置的授权根范围；非空字符串必须是授权根下以 `/` 结束的目录前缀。缺字段、非字符串、越界或歧义路径拒绝，不以自动回退掩盖非法输入。预览结果不暴露对象 key，前端使用条目 ID 提交勾选项。
 
+显式旧记录位置绑定可在单项commit增加existingVideoId：owner/旧key须与所选已HEAD核验对象精确一致，通过bindLegacy保留原id/标题/组织/进度，仅固定完整对象及已验媒体分析；已绑定不同身份/错key拒绝，不推断历史Bucket。普通导入省略该字段。
+
 ## 4. 初始错误码
 
 | HTTP | code 示例 | 前端处理 |
@@ -128,14 +138,14 @@ OSS 上传 ID、对象路径和 ETag 的权威状态由服务端维护，客户�
 | 401 | `INVALID_CREDENTIALS` | 密码/验证码不正确或已使用，提示重新验证；不区分泄漏因素细节 |
 | 403 | `FORBIDDEN`, `CSRF_REJECTED` | 显示无权限/来源检查失败，不重试绕过 |
 | 404 | `NOT_FOUND` | 显示资源不存在或不可访问 |
-| 409 | `UPLOAD_STATE_CONFLICT`, `FILE_MISMATCH` | 刷新任务或要求重新选文件 |
+| 409 | `UPLOAD_STATE_CONFLICT`, `FILE_MISMATCH`, `ORGANIZATION_CONFLICT` | 刷新任务、修改重复名称或归档选择 |
 | 413/415 | `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE` | 修正分片大小或内容类型，不自动提高限制 |
 | 416 | `RANGE_NOT_SATISFIABLE` | 处理无效范围，禁止完整下载回退掩盖错误 |
 | 429 | `RATE_LIMITED`, `PLAYBACK_CONCURRENCY_LIMIT`, `TRANSFER_LIMIT_EXCEEDED` | 停止无限重试，展示限制信息 |
 | 503 | `STORAGE_UNAVAILABLE` | 显示存储暂不可用，记录 requestId |
 | 500/503 | `INTERNAL_ERROR`, `SERVICE_NOT_CONFIGURED` | 记录 requestId，提示服务异常或尚未完成配置 |
 
-Native video 的错误事件可能无法直接提供 JSON 错误。前端应结合播放会话和站内状态查询展示提示，不通过改用 OSS 公网地址绕过失败。
+Native video错误不一定提供JSON；按模式和真实sourceExpiresAt有限续签，保留位置/暂停状态。失败不回退匿名地址或长期AK签名。
 
 ## 5. 后端接入接口
 
@@ -155,31 +165,34 @@ CORE-01 在公共类型或后端公共接口目录提供以下约定，MEDIA 模
 
 服务端契约统一从 `apps/api/src/core/contracts/index.ts` 导入，具体方法与参数以 `repositories.ts`、`storage.ts`、`media.ts` 为准。它们不能进入前端依赖。测试替身入口为 `apps/api/test/helpers/media-dependencies.ts`，默认鉴权拒绝、其他依赖返回不可用，不伪造业务成功。
 
-子代理 2 导出 `registerMediaModule: MediaModule`，签名为 `(app: FastifyInstance, dependencies: MediaDependencies) => Promise<void>`。路由包含完整 `/api` 前缀；主控通过 `buildApp({ config, media: { register: registerMediaModule, dependencies } })` 注入，不再叠加第二次前缀。dependencies 包含 `kind`、`auth`、`videos`、`uploads`、`playback`、`usage`、`storage`、`config`、`now`；必须使用同一份 config 对象。只有依赖方法齐全、存储驱动一致且流量/并发限制已明确配置时可注册。
+媒体公开 `createMediaModule(explicitOptions)`；旧 `registerMediaModule` 仅用于明确test依赖，不能当用户预算。路由含完整/api，runtimeModules注入同一config/auth/真实SQL；dependencies新增organizations/objects/sources，oss要求原子登记/审计/签名依赖齐全。kind为test/development/production，生产拒绝测试或Mock。
 
 AuthGuard 每次敏感请求检查登录会话；Repository 的读写以 ownerId 约束归属。播放会话的创建与并发检查必须原子执行；Range 请求复用会话。用量 `reserve` 原子预留下一小块字节（在途预留也占额度），发送后 `settle` 幂等结算实际发送量并释放未用预留，断开时也结算。不得以独立的“读计数再写计数”实现并发限额。统计不是云账单。
 
-上传创建 Multipart 和导入前调用 `VideoRepository.assertCategoryOwned(ownerId, categoryId)`；不存在或不属于当前账户的分类返回 NOT_FOUND。`VideoRepository.register` 对 `ownerId + originalObject.key` 原子幂等，已有对象返回原记录且不覆盖标题/分类等元数据；新登记再次检查分类。真实 Repository 必须以数据库唯一性/事务实现跨预览、并发与重启去重，不能只依靠媒体进程内缓存。
+上传/导入先验证本人分类/分组/标签活动状态；不存在/跨owner返回NOT_FOUND，归档或重复名称返回ORGANIZATION_CONFLICT。原片registered完整对象/资产身份原子幂等（legacy仅旧Mock按owner+key兼容），数据库唯一性/事务支撑跨预览/重启去重；新上传最终finishRegistration同时完成快照/资产/视频/任务/操作，已有记录不覆盖。
 
 上传完成允许在单 API 实例的任务锁内重试 `finalizing`：先执行同状态 CAS 校验，再 HEAD 检查对象是否已经完成，以权威分片完成或重新登记，幂等返回原视频。`finalizing -> finalizing` 仅检查状态，不提供跨进程互斥；多 API 实例需要后续持久化任务租约，不能直接将本单机锁扩展为分布式锁。
 
-StorageAdapter 只接收服务端生成/解析的对象引用，支持元数据、闭区间 Range 流、Multipart 和限定前缀列表，所有 I/O 接收 AbortSignal。媒体模块负责 HTTP Range、背压、断开取消、checksum、鉴权、状态机及用量；适配器不授权用户、不生成 B 播放 URL、不清理对象。真实 Repository 在 apps/api/src/db/repositories.ts，真实 AuthGuard 为 modules/auth/service.ts 的 AuthService；已经隔离 SQL/媒体测试验证兼容，默认 API 入口暂未注册媒体业务，未连接真实 OSS。
+StorageAdapter只接收服务端对象引用并处理流式I/O/Range/Multipart/限定列表；独立PresignedSourceProvider负责固定CNAME读取STS/V4签名，StsCredentialProvider返回Expiration并按用途隔离缓存。不接受客户端任意URL/key，不清理对象。默认入口已统一真实SQL/Auth/媒体，启用oss前仍需版本2库和显式配置；本轮未连接真实OSS。
 
 ## 6. 配置与本地验证
 
 - 开发默认 `PLAYBACK_MODE=proxy`。
-- `STORAGE_DRIVER` 枚举为 `mock | oss`，默认 `mock`；`oss` 仅预留，CORE-01 设置它会报错，不实例化真实 OSS。不存在隐式 `local` 或公网回退。
+- `STORAGE_DRIVER=mock|oss`，默认mock只用于明确开发proxy；oss配置全部校验后装配真实SDK。上传网络匹配固定杭州Endpoint、公网须显式确认；签名使用独立固定HTTPS CNAME，不存在隐式公网/Mock回退。
 - 本机 Mock 数据与真实 OSS 数据明确区分，真实访问不得自动产生费用或覆盖对象。
 - Fastify 默认 `API_HOST=127.0.0.1`、`API_PORT=3000`；Vite 使用 `127.0.0.1:5173`、`strictPort: true`，将 `/api` 代理到 `http://127.0.0.1:3000`，浏览器使用相对 URL 和 Cookie。前端已创建；改 API_PORT 时需同步代理目标，不自动换端口。占用时只读检查进程，不强制终止。
 - 开发会话 Cookie 与生产 HTTPS 配置明确区分，不能为了本地 HTTP 调试永久关闭生产保护。
 - Node.js 源码调试与依赖库使用的 SQLite 不依赖用户安装目录 `G:\software\SQLite`。
 - `.db` 文件和 secrets 均不作为前端静态资源发布。
-- 配置由 `readConfig` 严格读取；空值/错枚举/非法端口/非法时区/非安全整数字节数均报错。缺失 `TRANSFER_LIMIT_BYTES` 或 `MAX_PLAYBACK_SESSIONS` 允许启动 health 骨架，拒绝媒体注册。显式 `TRANSFER_LIMIT_BYTES=unlimited` 表示不限应用总量，非缺失配置的回退。
-- `NODE_ENV=production` 当前仍拒绝启动，生产模块装配和真实存储留待 CORE-06；本地账号/数据库可用不表示生产业务已可用。不能仅移除检查或复用测试放行实现。
-- 根目录 `.env.example` 无凭证；可新建 `.env`，已有文件不得覆盖。dev/start 脚本加载根目录 `.env`，进程环境变量优先；当前默认服务器读取 .local 的正式数据库和安全密钥，不在启动时创建/迁移，不读取 OSS 凭证。详细命令与已验/待验见 [ACCOUNT](ACCOUNT.md)、[DATABASE](DATABASE.md)；CORE-01 记录保留为初始历史基线。
+- readConfig严格拒绝空值/错枚举/端口/时区/非安全整数；完整业务缺上传/签发/时区/并发参数拒绝。仅proxy需TRANSFER_LIMIT_BYTES三态政策，oss未知字节不使用该每日硬限制；health独立骨架仍可无媒体构建。
+- production仅在同一SQLite真实AuthService/安全Cookie/HTTPS Origin与完整OSS/资源配置装配时允许启动，拒绝测试/Mock；代码检查通过不等于生产环境已验。
+- .env.example无秘密，已有.env不得覆盖；dev/start加载根.env，进程环境优先。默认服务器读取.local真实库与鉴权密钥、不在启动创建/迁移；显式oss配置才从受保护文件装配STS用途，生产/实云验收另记。详细命令见ACCOUNT/DATABASE与后端交接。
 
 ## 7. 契约变更记录
 
+- 2026-10-02（最新准备）：主控完整API61/61通过，本机portable FFprobe9.0.2及真实两样例分析已验（原HEVC/AAC unsupported、独立H264/AAC副本ready，原片保留）；正式库v2/users1。真实STS/OSS/私有范围/CORS验收授权仍待落实，不将本机结果代替实云。
+- 2026-10-02（14:21 UTC）：用户具体授权后正式库一致性备份并0002升级完成；版本2/25表/users1，旧13表全部旧列SHA与计数保留、fk0/integrityok，手工24表库不变。0002 SHA未改，真实STS/OSS/FFprobe环境验收仍待完成。
+- 2026-10-02（迁移前）：V0.5冻结组织/完整对象、上传原子登记、proxy/oss播放/续签/下载、无源heartbeat、STS提供者、独立未知用量及limits。真SQL/真实Auth/本机SDK协议API54项通过；当时正式原库v1，后续正式授权升级见上条，真实STS/OSS仍待验。
 - 2026-10-01：CORE-02/03 实现真实账号、Argon2id/TOTP、Cookie会话、CSRF/可信Origin、失败限流和本地初始化/恢复；增加 INVALID_CREDENTIALS，默认API仅注册health/auth。独立新正式库已按用户授权创建并以实际HTTP验证，用户测试库未变。
 - 2026-10-01：补充单 API 实例在任务锁内恢复 finalizing 的同状态 CAS 约定；多实例互斥明确留给后续持久化租约设计。
 - 2026-10-01：媒体/前端协调导入预览空 prefix 的含义：明确空串选择服务端授权根范围，其余输入仍严格验证；DTO 形状不变。

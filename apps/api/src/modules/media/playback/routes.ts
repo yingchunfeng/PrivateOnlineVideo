@@ -5,27 +5,86 @@ import type { MediaContext } from "../context.js";
 import { principal, requestSignal, text } from "../context.js";
 import { usagePeriod } from "../metering/period.js";
 import { parseRange } from "./range.js";
+import { RequestLimiter } from "../limits/rate.js";
+import { safeDownloadFileName } from "../storage/signing.js";
 
 export const TRANSFER_BLOCK_BYTES = 64 * 1024;
 
 export function registerPlaybackRoutes(app: FastifyInstance, context: MediaContext): void {
   const { dependencies: deps, options } = context;
-  app.post<{ Params: { videoId: string } }>("/api/videos/:videoId/playback-sessions", async request => {
+  const authorizationLimit = deps.config.media?.maxAuthorizationsPerMinute ?? options.requestsPerMinute;
+  const authorizations = new RequestLimiter(authorizationLimit);
+  app.get("/api/settings/usage", async request => {
+    const auth = await principal(context, request);
+    return { data: await deps.usage.read(auth.user.id, usagePeriod(deps.now(), deps.config.usageTimezone), deps.config.transferPolicy, deps.config.playbackMode) };
+  });
+  app.post<{ Params: { videoId: string } }>("/api/videos/:videoId/playback-sessions", async (request, reply) => {
     const auth = await principal(context, request, true); const videoId = text(request.params.videoId);
     const record = await deps.videos.findOwned(auth.user.id, videoId);
     if (!record) throw new HttpError("NOT_FOUND");
     if (!record.video.playable || record.video.status !== "ready") throw new HttpError("UNSUPPORTED_MEDIA_TYPE");
-    const period = usagePeriod(deps.now(), deps.config.usageTimezone);
-    const usage = await deps.usage.read(auth.user.id, period, deps.config.transferPolicy);
-    if (usage.limitMode === "unconfigured") throw new HttpError("SERVICE_NOT_CONFIGURED");
-    if (usage.limitMode === "limited" && usage.transferredBytes >= usage.limitBytes) throw new HttpError("TRANSFER_LIMIT_EXCEEDED");
+    if (deps.config.playbackMode === "proxy") {
+      const period = usagePeriod(deps.now(), deps.config.usageTimezone);
+      const usage = await deps.usage.read(auth.user.id, period, deps.config.transferPolicy, "proxy");
+      if (usage.source !== "application_proxy" || usage.limitMode === "unconfigured") throw new HttpError("SERVICE_NOT_CONFIGURED");
+      if (usage.limitMode === "limited" && usage.transferredBytes >= usage.limitBytes) throw new HttpError("TRANSFER_LIMIT_EXCEEDED");
+    } else authorizations.check(auth.user.id, "authorization", deps.now().getTime());
     const created = await deps.playback.create({ principal: auth, videoId, now: deps.now().toISOString(),
-      expiresAt: new Date(deps.now().getTime() + options.playbackTtlMs).toISOString(), maxActiveSessions: deps.config.maxPlaybackSessions! });
+      expiresAt: new Date(deps.now().getTime() + options.playbackTtlMs).toISOString(), maxActiveSessions: deps.config.maxPlaybackSessions!, mode: deps.config.playbackMode });
+    if (deps.config.playbackMode === "oss") {
+      if (!deps.sources || !deps.playback.authorize) throw new HttpError("SERVICE_NOT_CONFIGURED");
+      const { controller, dispose } = requestSignal(request, reply);
+      try {
+        const source = await deps.sources.sign({ object: record.playbackObject, purpose: "playback", signal: controller.signal });
+        const current = await principal(context, request, true); controller.signal.throwIfAborted();
+        await deps.playback.authorize({ principal: current, videoId, sessionId: created.session.id, purpose: "playback",
+          sourceExpiresAt: source.sourceExpiresAt, now: deps.now().toISOString(), maxAuthorizationsPerMinute: authorizationLimit });
+        return { data: { id: created.session.id, videoId, expiresAt: created.session.expiresAt, mode: "oss", ...source } };
+      } catch (error) {
+        try { await deps.playback.close(auth, created.session.id, deps.now().toISOString()); } catch { /* 已撤销登录由仓储拒绝，无新授权响应。 */ }
+        throw error instanceof HttpError ? error : new HttpError("STORAGE_UNAVAILABLE");
+      } finally { controller.abort(); dispose(); }
+    }
     return { data: created.session };
+  });
+  app.post<{ Params: { sessionId: string } }>("/api/playback-sessions/:sessionId/source", async (request, reply) => {
+    const auth = await principal(context, request, true);
+    if (deps.config.playbackMode !== "oss" || !deps.sources || !deps.playback.authorize) throw new HttpError("FORBIDDEN");
+    authorizations.check(auth.user.id, "authorization", deps.now().getTime());
+    const session = await deps.playback.findActive({ principal: auth, sessionId: text(request.params.sessionId), now: deps.now().toISOString() });
+    if (!session || session.session.mode !== "oss") throw new HttpError("FORBIDDEN");
+    const record = await deps.videos.findOwned(auth.user.id, session.session.videoId);
+    if (!record) throw new HttpError("NOT_FOUND");
+    if (!record.video.playable || record.video.status !== "ready") throw new HttpError("UNSUPPORTED_MEDIA_TYPE");
+    const { controller, dispose } = requestSignal(request, reply);
+    try {
+      const source = await deps.sources.sign({ object: record.playbackObject, purpose: "playback", signal: controller.signal });
+      const current = await principal(context, request, true); controller.signal.throwIfAborted();
+      await deps.playback.authorize({ principal: current, videoId: record.video.id, sessionId: session.session.id, purpose: "renewal",
+        sourceExpiresAt: source.sourceExpiresAt, now: deps.now().toISOString(), maxAuthorizationsPerMinute: authorizationLimit });
+      return { data: { id: session.session.id, videoId: record.video.id, expiresAt: session.session.expiresAt, mode: "oss", ...source } };
+    } finally { controller.abort(); dispose(); }
+  });
+  app.post<{ Params: { videoId: string } }>("/api/videos/:videoId/download-authorizations", async (request, reply) => {
+    const auth = await principal(context, request, true);
+    if (deps.config.playbackMode !== "oss" || !deps.sources || !deps.playback.authorize) throw new HttpError("FORBIDDEN");
+    authorizations.check(auth.user.id, "authorization", deps.now().getTime());
+    const record = await deps.videos.findOwned(auth.user.id, text(request.params.videoId));
+    if (!record) throw new HttpError("NOT_FOUND");
+    const fileName = safeDownloadFileName(record.video.title);
+    const { controller, dispose } = requestSignal(request, reply);
+    try {
+      const source = await deps.sources.sign({ object: record.originalObject, purpose: "download", fileName, signal: controller.signal });
+      const current = await principal(context, request, true); controller.signal.throwIfAborted();
+      await deps.playback.authorize({ principal: current, videoId: record.video.id, purpose: "download", sourceExpiresAt: source.sourceExpiresAt,
+        now: deps.now().toISOString(), maxAuthorizationsPerMinute: authorizationLimit });
+      return { data: { videoId: record.video.id, mode: "oss", fileName, sourceUrl: source.sourceUrl, sourceExpiresAt: source.sourceExpiresAt } };
+    } finally { controller.abort(); dispose(); }
   });
   app.post<{ Params: { sessionId: string } }>("/api/playback-sessions/:sessionId/heartbeat", async request => {
     const auth = await principal(context, request, true);
     const record = await deps.playback.heartbeat(auth, text(request.params.sessionId), deps.now().toISOString());
+    if (record.session.mode === "oss") return { data: { id: record.session.id, videoId: record.session.videoId, mode: "oss", expiresAt: record.session.expiresAt } };
     return { data: record.session };
   });
   app.post<{ Params: { sessionId: string } }>("/api/playback-sessions/:sessionId/close", async request => {
@@ -36,6 +95,7 @@ export function registerPlaybackRoutes(app: FastifyInstance, context: MediaConte
   app.route<{ Params: { videoId: string }; Querystring: { playbackSessionId?: string } }>({
     method: ["GET", "HEAD"], url: "/api/videos/:videoId/stream", handler: async (request, reply) => {
       const auth = await principal(context, request); const videoId = text(request.params.videoId);
+      if (deps.config.playbackMode !== "proxy") throw new HttpError("FORBIDDEN");
       const sessionId = text(request.query.playbackSessionId);
       const record = await deps.videos.findOwned(auth.user.id, videoId);
       if (!record || !record.video.playable || record.video.status !== "ready") throw new HttpError("NOT_FOUND");

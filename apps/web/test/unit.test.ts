@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ApiClient, ApiError, isSiteApiPath } from "../src/api/client";
-import { checksum, completeTask, uploadFile, validateTask, verifyFile } from "../src/upload";
+import { checksum, completeTask, uploadFile, validateTask, validateUploadSize, verifyFile } from "../src/upload";
 import type { UploadTask, VideoDetail } from "@online-video/shared";
 import { presentUsage } from "../src/usage";
+import { authApi } from "../src/api/auth";
 import type { ApplicationUsage } from "@online-video/shared";
 
 test("同源 API、Cookie、CSRF 与原始分片请求使用契约头", async () => {
@@ -48,6 +49,21 @@ test("畸形 401 必须清会话，原型属性不能充当错误码", async () 
   }
 });
 
+test("真业务 auth 客户端恢复/登录校验与退出/撤销路由", async () => {
+  const session = { user: { id: "本人", displayName: "本人", totpEnabled: true }, csrfToken: "csrf-value" };
+  const calls: { path: string; init?: RequestInit }[] = [];
+  const client = new ApiClient(async (path, init) => { calls.push({ path, ...(init ? { init } : {}) }); return Response.json({ data: path === "/api/auth/me" || path === "/api/auth/login" ? session : { success: true } }); });
+  const auth = authApi(client);
+  assert.deepEqual(await auth.me(), session);
+  assert.deepEqual(await auth.login({ password: "test-only", totp: "123456" }), session);
+  client.setSession(session.csrfToken);
+  await auth.revoke("session-a"); await auth.logout();
+  assert.equal(calls[2]?.path, "/api/auth/sessions/session-a/revoke");
+  assert.equal(new Headers(calls[2]?.init?.headers).get("x-csrf-token"), session.csrfToken);
+  const invalid = authApi(new ApiClient(async () => Response.json({ data: { user: session.user } })));
+  await assert.rejects(() => invalid.me(), (error: unknown) => error instanceof ApiError && error.code === "INVALID_RESPONSE");
+});
+
 const taskFixture = (): UploadTask => ({ id: "upload-a", videoId: null, fileName: "a.mp4", sizeBytes: 9, partSizeBytes: 4, status: "uploading", uploadedParts: [], createdAt: "2026-10-01T00:00:00.000Z" });
 const videoFixture = (): VideoDetail => ({ id: "video-a", title: "视频", categoryId: "default", durationSeconds: null, sizeBytes: 9, status: "processing", thumbnailUrl: null, createdAt: "2026-10-01T00:00:00.000Z", codec: null, width: null, height: null, playable: false, lastPositionSeconds: 0 });
 test("逐片 SHA-256，核对已完成片后只上传缺失片，禁止读取整文件", async () => {
@@ -71,6 +87,14 @@ test("逐片 SHA-256，核对已完成片后只上传缺失片，禁止读取整
   const result = await uploadFile(client, file, task, new AbortController().signal, () => {});
   assert.deepEqual(numbers, [2, 3]); assert.equal(result.upload.status, "completed");
   assert.equal(await checksum(new Blob(["abc"])), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+});
+
+test("使用服务端公开上限拦截 2 GiB 边界，无需读取文件正文", () => {
+  const limits = { maxUploadBytes: 2147483648, partSizeBytes: 8388608, maxUploadConcurrency: 2, maxPlaybackSessions: 3, maxAuthorizationsPerMinute: 12 };
+  validateUploadSize(2147483648, limits);
+  assert.throws(() => validateUploadSize(2147483649, limits), (err: unknown) => err instanceof ApiError && err.message.includes("2,147,483,648"));
+  assert.throws(() => validateUploadSize(0, limits), ApiError);
+  assert.throws(() => validateUploadSize(1, { ...limits, maxUploadBytes: Number.NaN }), ApiError);
 });
 
 test("同名同大小错误文件拒绝恢复，重复分片和已暂停任务拒绝写入", async () => {
@@ -103,4 +127,11 @@ test("应用用量三态、零限额、到达限额与未知来源不混淆", ()
   assert.deepEqual(presentUsage({ ...base, limitMode: "unlimited", limitBytes: null }), { kind: "unlimited" });
   assert.throws(() => presentUsage({ ...base, source: "unknown", limitMode: "limited", limitBytes: 100 } as unknown as ApplicationUsage), ApiError);
   assert.throws(() => presentUsage({ ...base, limitMode: "unlimited", limitBytes: 0 } as unknown as ApplicationUsage), ApiError);
+});
+
+test("OSS 直连未知字节不转成 0 或代理额度，签发次数独立", () => {
+  const usage: ApplicationUsage = { source: "oss_direct", statisticsStatus: "not_synced", periodStart: "2026-10-01T00:00:00.000Z", periodEnd: "2026-10-02T00:00:00.000Z", timezone: "Asia/Shanghai", transferredBytes: null, cloudStatisticsAt: null, limitMode: "not_applicable", limitBytes: null, activePlaybackSessions: 1, authorizationCount: 3, playbackAuthorizationCount: 1, renewalAuthorizationCount: 1, downloadAuthorizationCount: 1 };
+  assert.deepEqual(presentUsage(usage), { kind: "oss_unknown" });
+  assert.throws(() => presentUsage({ ...usage, transferredBytes: 0 } as unknown as ApplicationUsage), ApiError);
+  assert.throws(() => presentUsage({ ...usage, cloudStatisticsAt: usage.periodStart } as unknown as ApplicationUsage), ApiError);
 });

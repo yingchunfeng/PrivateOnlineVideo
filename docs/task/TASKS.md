@@ -1,9 +1,14 @@
 # 个人私有视频库：三代理任务总看板
 
 日期：2026-09-30  
-当前阶段：CORE-01～03、MEDIA-01～07、WEB-01～07 已完成本地交付；真实本人账号已创建，CORE-04～06 与完整业务联调尚未启动  
-下一阶段：2026-10-02 已规划分类/多分组/多标签、OSS对象定位及真实完整链路；新对话入口为 [STAGE2.md](STAGE2.md)，本轮不启动开发/代理/迁移。  
-需求依据：[PRD.md](PRD.md)
+当前阶段：2026-10-02 按用户授权启动第二阶段三个子代理开发；CORE-01～03、MEDIA-01～07、WEB-01～07 的历史本地交付保留，现有本人账号不重建。
+
+第二阶段：16张卡已完成，正式库按授权备份升级v2、保留本人账号；本机真实STS/OSS站内上传、私有Range、浏览器播放/下载、自动续签和重启恢复已验。入口为[STAGE2](STAGE2.md)，最终证据见[完成审计](../STAGE2_COMPLETION_AUDIT.md)。清单之外的实云/权限变更不自动授权。
+
+第三阶段已建立：[STAGE3](STAGE3.md)，按用户最终选择采用网站/OSS HTTPS，范围为证书/服务器部署、杭州内网、安卓与运维；本地实云见[OSS_LOCAL_TEST_PLAN](../OSS_LOCAL_TEST_PLAN.md)。12张第三阶段卡均TODO，尚未实施。
+需求依据：[PRD.md](../PRD.md)
+
+架构以最新STAGE2为准，旧A默认/不启动B为历史规则。手工库24表无账号/ledger保留，正式.local库版本2/本人账号1条；原片ces.mp4经真实FFprobe识别为HEVC/AAC，独立兼容副本已按用户选择生成，未覆盖原片。OSS HTTPS及公开样例HEAD/TLS通过；本人私有范围/STS完整链待验，网站证书归阶段3。旧DONE不替代新验收。
 
 ## 0. 模块设计/数据库文件清单
 
@@ -16,10 +21,14 @@
 | `docs/PARALLEL_DEVELOPMENT_HANDOFF.md` | 媒体/前端并行交付、主控复核及真实接入清单 | 主控 |
 | `docs/ACCOUNT.md`、`docs/DATABASE.md` | 真实账号、登录、SQL迁移及备份边界 | 主控 / 子代理 1 |
 | `STAGE2.md` | 第二阶段三代理总入口、协作门槛及新对话提示词 | 主控 |
+| `docs/OSS_LOCAL_TEST_PLAN.md` | 剩余OSS材料、本地公网配置及第二阶段真实验收 | 主控 / 第二阶段代理2 |
+| `docs/task/STAGE3.md` | 第三阶段访问模式、部署/安卓/运维门槛与交接入口 | 主控 |
+| `.ai/demand/stage3/01-deployment.md`、`02-oss-operations.md`、`03-acceptance.md` | 第三阶段三个独立任务板，当前全部TODO | 对应第三阶段代理 |
 | `docs/STAGE2_API_CONTRACT.md` | 分类/分组/标签与完整对象定位提案，冻结后实施 | 主控 / 第二阶段代理1 |
 | `docs/sql/STAGE2_PENDING.sql`、`docs/sql/README.md` | 下一阶段待执行增量SQL及版本/备份边界 | 第二阶段代理1 |
 | `docs/OSS_SETUP.md` | OSS所需材料、Node SDK选型、官方来源 | 主控 / 第二阶段代理2 |
-| `.ai/demand/stage2/01-backend.md`、`02-media.md`、`03-frontend.md` | 第二阶段三个独立任务板，当前全部TODO | 对应第二阶段代理 |
+| `.ai/demand/stage2/01-backend.md`、`02-media.md`、`03-frontend.md` | 第二阶段三个独立任务板，已启动逐卡开发 | 对应第二阶段代理 |
+| `docs/STAGE2_INTEGRATION.md`、`docs/LOCAL_DEVELOPMENT.md`、`.vscode/` | 主控分层验收记录、本地运行与调试入口 | 主控 |
 | `apps/api/src/modules/media/HANDOFF.md` | 媒体注册、资源限制、存储与 Repository 交接 | 子代理 2 |
 | `apps/web/HANDOFF.md` | 前端运行、Mock 隔离、界面验证与真实 API 待验 | 子代理 3 |
 | `.ai/demand/01-backend.md` | 子代理 1 的独立任务与完成记录 | 子代理 1 |
@@ -73,9 +82,9 @@
 | CORE-01 | DONE | 初始化工程骨架、公共类型及媒体接入接口 | 无 |
 | CORE-02 | DONE | SQLite schema、迁移与 Repository 层 | CORE-01；独立新正式库已获用户授权初始化 |
 | CORE-03 | DONE | 单人账户、TOTP、会话与安全恢复 | CORE-02 |
-| CORE-04 | TODO | 分类、视频元数据、搜索与编辑 | CORE-02、CORE-03 |
-| CORE-05 | TODO | 观看记录、会话管理、用量与设置接口 | CORE-02、CORE-03；计量与 MEDIA-03 对接 |
-| CORE-06 | TODO | 后端模块装配、验证及运行说明 | CORE-03～05、媒体模块交付 |
+| CORE-04 | DONE | 分类、视频元数据、搜索与编辑（由P2-CORE-02/03完成真SQL/HTTP） | CORE-02、CORE-03 |
+| CORE-05 | DONE | 观看记录、会话管理、用量与设置接口（由P2-CORE-04完成） | CORE-02、CORE-03；计量与 MEDIA-03 对接 |
+| CORE-06 | DONE | 后端模块装配、验证及运行说明（P2-CORE-05/06与本机实云完整链完成） | CORE-03～05、媒体模块交付 |
 
 ### 3.2 子代理 2：OSS 与视频传输
 
@@ -107,24 +116,34 @@
 
 | ID | 状态 | 任务 | 前置依赖 |
 | --- | --- | --- | --- |
-| INT-01 | TODO | 接口与数据一致性检查，串行处理共享依赖 | 三组模块交付 |
-| INT-02 | TODO | 本地一键启动、VS Code tasks/launch 和运行说明 | INT-01 |
-| INT-03 | TODO | 登录→分类→上传→播放→续播完整联调 | INT-02；真实安卓/OSS项按授权与环境补验 |
-| LATER-01 | BACKLOG | 容器化部署与现有 Nginx 对接 | 本地版本验收后再安排 |
-| LATER-02 | BACKLOG | B 方案启用和 OSS 公网授权评估 | 用户明确要求并完成费用、安全核实 |
+| INT-01 | DONE | 接口与数据一致性检查，复用已安装依赖，无新增npm安装 | 三组模块交付 |
+| INT-02 | DONE | 本地启动/VS Code配置与说明；正式v2库真实runtime装配health200/me401，无云请求 | INT-01 |
+| INT-03 | DONE | 真SQL/Auth/本机实云上传播放续签下载及重启联调通过；安卓/部署内网归第三阶段 | INT-02；阶段2实云已按授权验收 |
+| LATER-01 | TODO | 容器化部署与现有Nginx对接，已并入P3-OPS-01～04 | 第二阶段本地实云交接；实际执行另明确目标/授权 |
+| LATER-02 | DONE | OSS直连播放/下载，由P2-MEDIA-01/03/05与P2-WEB-04完成本机真实链 | 用户已明确架构并授权小范围实云验收 |
 | LATER-03 | BACKLOG | PWA、自动兼容副本、多码率 HLS | 实际需要时安排 |
 
 `BACKLOG` 表示不在本轮开发范围，不等同于取消。详细任务卡见各代理独立任务板。
 
-### 3.5 第二阶段任务入口（2026-10-02，尚未实施）
+### 3.5 第二阶段任务入口（2026-10-02，已启动）
 
 | 负责人 | 范围 | 状态 | 任务板 |
 | --- | --- | --- | --- |
-| 子代理1 | P2-CORE-01～06：增量迁移/契约、组织/库/进度/用量真API、统一装配 | TODO | [.ai/demand/stage2/01-backend.md](.ai/demand/stage2/01-backend.md) |
-| 子代理2 | P2-MEDIA-01～05：完整对象位置、上传组织登记、真鉴权/计量、导入/格式、授权实云验收 | TODO | [.ai/demand/stage2/02-media.md](.ai/demand/stage2/02-media.md) |
-| 子代理3 | P2-WEB-01～05：真API、分类/分组/标签UI、上传/筛选/播放/安全、安卓链路验收 | TODO | [.ai/demand/stage2/03-frontend.md](.ai/demand/stage2/03-frontend.md) |
+| 子代理1 | P2-CORE-01～06：正式库0002、组织/对象及proxy/oss续签/下载/用量契约、真实API装配 | 全部DONE；正式迁移/账号保留/实云重启和SQL审计齐全 | [01-backend](../../.ai/demand/stage2/01-backend.md) |
+| 子代理2 | P2-MEDIA-01～05：STS用途隔离/双Endpoint、V4直连/续签/下载、流式上传登记与实云验收 | 全部DONE；两新私有对象/真实权限/播放下载自动续签已验 | [02-media](../../.ai/demand/stage2/02-media.md) |
+| 子代理3 | P2-WEB-01～05：组织/上传真API、直连播放器/下载/到期恢复、分模式用量及安卓验收 | 全部DONE；手机布局/长媒体本地验证及实际浏览器实云链通过；安卓原生归第三阶段 | [03-frontend](../../.ai/demand/stage2/03-frontend.md) |
 
-新对话按STAGE2及这三个新板逐卡开发；先P2-CORE-01契约冻结，再并行。旧CORE-04～06缺口由P2-CORE-02～06承接，旧看板保留历史，不重复初始化或重写已完成模块。实际SQL迁移/OSS读写仍另明确目标/材料/备份/授权。当前应用只有版本1迁移器，不能直接执行待执行SQL。
+已按STAGE2完成冻结后并行交付，旧CORE-04～06缺口由P2-CORE-02～06承接，历史保留，不重复初始化或重写模块。应用支持有序版本1/2，正式0002已获具体授权并备份执行、逐旧列保留核验通过；手工库未改。实际OSS读写和权限变更仍需具体范围/授权，当前外部剩余见OSS_LOCAL_TEST_PLAN与STAGE2_OPERATIONS_PLAN。
+
+### 3.6 第三阶段任务入口（2026-10-02，仅规划）
+
+| 负责人 | 范围 | 状态 | 任务板 |
+| --- | --- | --- | --- |
+| 子代理1 | P3-OPS-01～04：调查/HTTPS运行、Linux持久化、发布配置与授权部署 | TODO | [01-deployment](../../.ai/demand/stage3/01-deployment.md) |
+| 子代理2 | P3-OSS-01～04：媒体证书/CORS/STS、杭州内网、费用与备份/密钥运维 | TODO | [02-oss-operations](../../.ai/demand/stage3/02-oss-operations.md) |
+| 子代理3 | P3-WEB-01～04：HTTPS安卓上传、直连/续签/下载、异常恢复与发布验收 | TODO | [03-acceptance](../../.ai/demand/stage3/03-acceptance.md) |
+
+具体访问协议/材料/门槛见[STAGE3](STAGE3.md)。阶段2本地实云与阶段3服务器/真机分别记录；先调查与冻结再按文件归属实施，不能因建立看板就执行远程变更。
 
 ## 4. 并行顺序与交接门槛
 
@@ -193,6 +212,12 @@
 ```
 
 ## 7. 完成记录
+
+- 2026-10-02（本机真实OSS收尾）：用户授权后完成STS3用途/缓存、两对象private上传及登记、匿名403/V4 Range206、原片及兼容完整附件SHA、真实浏览器播放、900秒STS两次自动续签/角色刷新、退出续签401而旧URL仍206、正常API重启恢复2视频组织和2秒进度。read用途唯一1byte Put403、import限定目录List200且恰2对象；原公开样例仍HEAD200。实云签名400参数已按GetObject白名单修正，root最终API62/前端14及类型/构建通过，16张阶段2卡全部DONE。普通3600配置及originals上传目录恢复、专用会话和测试服务关闭，所有原数据/对象/产物保留。附加fetch CORS不可读/网站HTTPS/真实安卓后台/杭州内网准确分列后续，不冒报。
+
+- 2026-10-02（本地长视频补验）：真实3600秒H264的1800/3590秒seek、非零Range/Content-Range、暂停/播放续签与重启进度通过。复现并修复短签名反复重置20秒心跳（48秒心跳0→2、SQL期限延长40秒），迟到源响应保留较晚期限；真实Page frozen14秒恢复区分APP403可重建与登录401。长TAP pass6/fail0/skip1，原生后台明确待验；前端旧短链/Mock/14单元/类型/生产复验通过，新独立发布15-40目录已核SHA。正式库/账号保留，未获得/执行本轮实云或新对象ACL授权。
+
+- 2026-10-02：三个阶段2代理完成本地代码/交接，主控最终check通过（API59/前端14及三包类型/构建）；真HTTP/本地OSS协议及7手机浏览器子场景、7Mock场景、生产检查通过。新独立发布目录及SHA清单已校验，旧产物保留。用户授权后正式库备份升级版本2，旧13业务表所有原列保留、本人1账号、完整性/外键正常，手工库不动。FFprobe9.0.2经当前源SHA校验，ces原片HEVC识别成功；用户选择独立兼容副本并已生成，尚未云读写/权限或部署。实云/长视频仍待验，整体目标保持推进。
 
 - 2026-10-02：创建第二阶段总入口/三个TODO任务板、分类+多分组+多标签及对象定位提案、待执行SQL与OSS Node SDK材料说明。仅规划及隔离SQL结构验证，不改现有账号/库/应用源码/0001，不启动代理、真实OSS、迁移或部署。
 - 2026-10-01：按用户选择完成 CORE-02/03 并在独立 .local 正式库创建本人账号；最终测试构成为48项（后端40/前端8），类型/构建通过，真实HTTP登录/me/退出及撤销后401验证通过。新增目录Windows ACL按批准收紧。全部功能源码纳入Git暂存，数据/秘密/构建/缓存排除，未提交/推送。测试库未修改；未自动进入CORE-04～06或连接OSS。

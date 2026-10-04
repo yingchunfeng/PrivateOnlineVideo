@@ -1,16 +1,51 @@
 :root {
-  --background: #101713;
-  --surface: #18211c;
-  --surface-high: #222e26;
-  --border: #3a4c40;
-  --text: #f2f5ef;
-  --muted: #b0bdb2;
-  --accent: #d2eea2;
-  --accent-hover: #e0f7bf;
-  --on-accent: #1e3112;
-  --accent-surface: #283820;
-  --error: #ffb9b2;
-  --error-surface: #3c2422;
-  --warning: #f3d599;
-  --warning-surface: #342c1c;
+  /* 深度深空与宇宙黑背景 */
+  --background: #080c14;
+  --background-radial: radial-gradient(circle at 50% 0%, #0d1a2d 0%, #080c14 75%);
+
+  /* 科技毛玻璃表面层 */
+  --surface: rgba(15, 23, 42, 0.75);
+  --surface-solid: #0f172a;
+  --surface-high: rgba(30, 41, 59, 0.7);
+  --surface-elevated: rgba(30, 41, 59, 0.9);
+  --border: rgba(56, 189, 248, 0.18);
+  --border-glow: rgba(0, 242, 254, 0.4);
+  --border-subtle: rgba(148, 163, 184, 0.12);
+
+  /* 文字系统 */
+  --text: #f8fafc;
+  --text-secondary: #94a3b8;
+  --muted: #64748b;
+
+  /* 主核心：青蓝电光 (Cyber Cyan) */
+  --accent: #00f2fe;
+  --accent-secondary: #38bdf8;
+  --accent-hover: #38f9d7;
+  --on-accent: #03131e;
+  --accent-surface: rgba(0, 242, 254, 0.12);
+  --accent-glow: 0 0 20px rgba(0, 242, 254, 0.35);
+
+  /* 次核心：霓虹紫 (Neon Violet) - 双色能量碰撞 */
+  --energy-purple: #a855f7;
+  --energy-purple-hover: #c084fc;
+  --energy-purple-surface: rgba(168, 85, 247, 0.15);
+  --purple-glow: 0 0 20px rgba(168, 85, 247, 0.4);
+
+  /* 双色离子渐变 */
+  --gradient-cyber: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  --gradient-fusion: linear-gradient(135deg, #00f2fe 0%, #a855f7 100%);
+  --gradient-purple: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+
+  /* 状态警示与错误 */
+  --error: #fb7185;
+  --error-surface: rgba(225, 29, 72, 0.15);
+  --error-glow: 0 0 16px rgba(244, 63, 94, 0.35);
+  --warning: #fbbf24;
+  --warning-surface: rgba(217, 119, 6, 0.15);
+  --success: #34d399;
+  --success-surface: rgba(16, 185, 129, 0.15);
+
+  /* 科技 HUD 阴影与微光 */
+  --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
+  --glass-blur: blur(16px);
 }

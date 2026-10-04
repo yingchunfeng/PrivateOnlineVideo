@@ -5,7 +5,14 @@ import type { StorageDriver } from "../config.js";
 
 /** 闭区间，start/end 为非负安全整数；由媒体模块解析和验证 HTTP Range。 */
 export interface ByteRange { start: number; end: number }
-export interface StorageMetadata { sizeBytes: number; contentType: string; etag: string }
+export interface StorageMetadata { sizeBytes: number; contentType: string; etag: string; versionId?: string | null }
+export type CredentialPurpose = "upload" | "import" | "read";
+export interface StsCredentials { accessKeyId: string; accessKeySecret: string; stsToken: string; expiration: string }
+export interface StsCredentialProvider { get(input: { purpose: CredentialPurpose; signal: AbortSignal }): Promise<StsCredentials> }
+export interface SignedSource { sourceUrl: string; sourceExpiresAt: string; renewAfter: string }
+export interface PresignedSourceProvider {
+  sign(input: { object: StorageObjectRef; purpose: "playback" | "download"; fileName?: string; signal: AbortSignal }): Promise<SignedSource>;
+}
 export interface StorageRead {
   stream: Readable;
   metadata: StorageMetadata;
@@ -13,6 +20,7 @@ export interface StorageRead {
 }
 export interface StorageListItem { object: StorageObjectRef; fileName: string; metadata: StorageMetadata }
 export interface StorageAdapter {
+  putImage?(input: { object: StorageObjectRef; bytes: Buffer; contentType: "image/jpeg"; signal: AbortSignal }): Promise<StorageMetadata>;
   readonly driver: StorageDriver;
   head(input: { object: StorageObjectRef; signal: AbortSignal }): Promise<StorageMetadata>;
   /** 背压与 AbortSignal 必须传给上游；不得读取整个视频后构造返回流。 */

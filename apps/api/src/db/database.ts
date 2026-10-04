@@ -32,21 +32,42 @@ export function guardDatabasePath(path: string): string {
   if (!result.endsWith(".db")) throw new ConfigurationError("数据库必须是 .local 内的独立 .db 文件");
   return result;
 }
-const migrationSql = () => readFileSync(new URL("./migrations/0001-initial.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-export function migrateDatabase(client: Database.Database): void {
-  const sql = migrationSql(); const checksum = createHash("sha256").update(sql).digest("hex");
-  const hasLedger = client.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
-  if (hasLedger && (client.prepare("SELECT MAX(version) version FROM schema_migrations").get() as { version: number | null }).version! > 1) {
-    throw new ConfigurationError("数据库版本高于当前源码，拒绝回退");
+export const MIGRATIONS = ["0001-initial.sql", "0002-library-organizing.sql"] as const;
+export function migrationManifest() {
+  return MIGRATIONS.map((name, index) => {
+    const sql = readFileSync(new URL(`./migrations/${name}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    return { version: index + 1, name, sql, checksum: createHash("sha256").update(sql).digest("hex") };
+  });
+}
+function validateLedger(client: Database.Database, latest: boolean) {
+  const recorded = client.prepare("SELECT version,checksum FROM schema_migrations ORDER BY version").all() as { version: number; checksum: string }[];
+  const expected = migrationManifest();
+  if (!recorded.length || recorded.length > expected.length || (latest && recorded.length !== expected.length) ||
+    recorded.some((row, index) => row.version !== expected[index]?.version || row.checksum !== expected[index]?.checksum)) {
+    throw new ConfigurationError("数据库迁移版本/顺序/校验与当前源码不一致；需明确目标并授权迁移，不会自动升级");
   }
+  return recorded.length;
+}
+export function migrateDatabase(client: Database.Database): void {
+  const migrations = migrationManifest();
+  const hasLedger = client.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
+  if (hasLedger) validateLedger(client, false);
   if (!hasLedger && (client.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").get() as { count: number }).count) {
     throw new ConfigurationError("拒绝对未知既有数据库初始化；请先人工核查及备份");
   }
   client.transaction(() => {
     client.exec("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)");
-    const existing = client.prepare("SELECT checksum FROM schema_migrations WHERE version=1").get() as { checksum: string } | undefined;
-    if (existing && existing.checksum !== checksum) throw new ConfigurationError("迁移 0001 校验不一致，拒绝修改已执行迁移");
-    if (!existing) { client.exec(sql); client.prepare("INSERT INTO schema_migrations VALUES (1,?,?)").run(checksum, new Date().toISOString()); }
+    const count = hasLedger ? validateLedger(client, false) : 0;
+    for (const migration of migrations.slice(count)) {
+      client.exec(migration.sql);
+      if (migration.version === 2) {
+        // Unicode 名称规范化在迁移事务内完成；冲突直接回滚，不清理用户数据。
+        const rows = client.prepare("SELECT id,name FROM categories").all() as { id: string; name: string }[];
+        for (const row of rows) client.prepare("UPDATE categories SET name_key=? WHERE id=?").run(row.name.normalize("NFKC").trim().toLocaleLowerCase("und"), row.id);
+      }
+      client.prepare("INSERT INTO schema_migrations VALUES (?,?,?)").run(migration.version, migration.checksum, new Date().toISOString());
+    }
+    if ((client.pragma("foreign_key_check") as unknown[]).length || client.pragma("integrity_check", { simple: true }) !== "ok") throw new ConfigurationError("迁移一致性检查失败，事务已回滚");
   }).immediate();
 }
 export function openDatabase(path: string, options: { initialize?: boolean } = {}) {
@@ -56,9 +77,7 @@ export function openDatabase(path: string, options: { initialize?: boolean } = {
     client.pragma("foreign_keys = ON"); client.pragma("busy_timeout = 5000");
     if (options.initialize) migrateDatabase(client);
     else {
-      const recorded = client.prepare("SELECT version,checksum FROM schema_migrations ORDER BY version").all() as { version: number; checksum: string }[];
-      const expected = createHash("sha256").update(migrationSql()).digest("hex");
-      if (recorded.length !== 1 || recorded[0]?.version !== 1 || recorded[0]?.checksum !== expected) throw new ConfigurationError("数据库迁移版本与当前源码不一致");
+      validateLedger(client, true);
     }
     if (path !== ":memory:") client.pragma("journal_mode = WAL");
     return { client, orm: drizzle(client, { schema }), path, close: () => client.close() };

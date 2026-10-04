@@ -6,6 +6,7 @@ import { ObjectScope } from "./storage/scope.js";
 import { RequestLimiter } from "./limits/rate.js";
 import { registerPlaybackRoutes } from "./playback/routes.js";
 import { registerUploadRoutes } from "./upload/routes.js";
+import { registerCoverRoutes } from "./cover/routes.js";
 import { registerImportRoutes } from "./import/routes.js";
 import { UnavailableMetadataInspector } from "./metadata/types.js";
 import { HttpError } from "../../core/errors.js";
@@ -23,9 +24,12 @@ export function createMediaModule(options: MediaOptions): MediaModule {
         const group = request.routeOptions.url?.includes("/parts/") ? "upload" : request.routeOptions.url?.includes("/stream") ? "stream" : "management";
         context.limiter.check(auth.user.id, group, dependencies.now().getTime());
       });
-      registerPlaybackRoutes(scoped, context);
       registerUploadRoutes(scoped, context);
-      registerImportRoutes(scoped, context);
+      if (dependencies.config.library) registerCoverRoutes(scoped, context);
+      if (!dependencies.config.library) {
+        registerPlaybackRoutes(scoped, context);
+        registerImportRoutes(scoped, context);
+      }
     });
   };
   return register;
@@ -41,7 +45,9 @@ export const registerMediaModule: MediaModule = async (app, dependencies) => {
 };
 
 export { MockStorageAdapter } from "./storage/mock.js";
-export { createOssStorageAdapter } from "./storage/oss.js";
+export { createOssStorageAdapter, createDirectOssStorageAdapter } from "./storage/oss.js";
+export { createStsCredentialCache, StsCredentialCache } from "./storage/sts.js";
+export { createOssPresignedSourceProvider, OssPresignedSourceProvider } from "./storage/signing.js";
 export { UnavailableMetadataInspector } from "./metadata/types.js";
 export { FFprobeMetadataInspector } from "./metadata/ffprobe.js";
 export type { MediaOptions } from "./options.js";

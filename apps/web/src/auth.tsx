@@ -4,6 +4,7 @@ import type { AuthSession, LoginRequest } from "@online-video/shared";
 import { Navigate, useLocation } from "react-router-dom";
 import { api } from "./api";
 import { ApiError } from "./api/client";
+import { authApi } from "./api/auth";
 import { ErrorNotice, Loading } from "./ui";
 
 interface AuthState { session: AuthSession | null; loading: boolean; error: unknown; expired: boolean; refresh: () => void; login: (body: LoginRequest) => Promise<void>; logout: () => Promise<void>; revoked: () => void }
@@ -19,14 +20,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError(undefined);
-    api.request<AuthSession>("/api/auth/me", { signal: controller.signal }).then(auth => { api.setSession(auth.csrfToken); setSession(auth); setExpired(false); }).catch(err => {
+    authApi(api).me(controller.signal).then(auth => { api.setSession(auth.csrfToken); setSession(auth); setExpired(false); }).catch(err => {
       if (controller.signal.aborted) return;
       if (err instanceof ApiError && (err.code === "AUTH_REQUIRED" || err.code === "SESSION_EXPIRED")) setSession(null); else setError(err);
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [revision]);
-  const login = async (body: LoginRequest) => { const auth = await api.request<AuthSession>("/api/auth/login", { method: "POST", body }); api.setSession(auth.csrfToken); setSession(auth); setExpired(false); };
-  const logout = async () => { await api.request<{ success: true }>("/api/auth/logout", { method: "POST" }); clear(); setExpired(false); };
+  const login = async (body: LoginRequest) => { const auth = await authApi(api).login(body); api.setSession(auth.csrfToken); setSession(auth); setExpired(false); };
+  const logout = async () => { await authApi(api).logout(); clear(); setExpired(false); };
   return <AuthContext.Provider value={{ session, loading, error, expired, refresh: () => setRevision(r => r + 1), login, logout, revoked: clear }}>{children}</AuthContext.Provider>;
 }
 export function useAuth() { const value = useContext(AuthContext); if (!value) throw new Error("Missing AuthProvider"); return value; }

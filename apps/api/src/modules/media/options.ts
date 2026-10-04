@@ -4,6 +4,8 @@ import type { MetadataInspector } from "./metadata/types.js";
 
 export interface MediaOptions {
   objectPrefix: string;
+  /** 可选服务端验收目录；仍须位于授权根下，客户端不能选择对象Key。 */
+  uploadObjectPrefix?: string;
   partSizeBytes: number;
   maxUploadBytes: number;
   maxUploadConcurrency: number;
@@ -16,7 +18,8 @@ export interface MediaOptions {
 
 /** 显式传入资源限制；不把本地测试参数当成生产预算。 */
 export function validateOptions(options: MediaOptions): void {
-  new ObjectScope(options.objectPrefix);
+  const scope = new ObjectScope(options.objectPrefix);
+  if (options.uploadObjectPrefix !== undefined && (scope.subprefix(options.uploadObjectPrefix) === options.objectPrefix)) throw new HttpError("SERVICE_NOT_CONFIGURED");
   for (const value of [options.partSizeBytes, options.maxUploadBytes, options.maxUploadConcurrency,
     options.playbackTtlMs, options.requestsPerMinute, options.previewTtlMs, options.maxPreviews]) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new HttpError("SERVICE_NOT_CONFIGURED");

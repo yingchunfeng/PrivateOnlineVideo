@@ -34,6 +34,9 @@ export class ApiClient {
     return this.send<T>(path, { method: "PUT", body: blob, ...(signal ? { signal } : {}),
       headers: { "content-type": "application/octet-stream", [PART_CHECKSUM_HEADER]: checksum } });
   }
+  async image<T>(path: ApiPath, blob: Blob, signal?: AbortSignal): Promise<T> {
+    return this.send<T>(path, { method: "PUT", body: blob, ...(signal ? { signal } : {}), headers: { "content-type": "image/jpeg" } });
+  }
   private async send<T>(path: ApiPath, init: RequestInit): Promise<T> {
     if (!isSiteApiPath(path)) throw new ApiError("VALIDATION_ERROR", "资源地址必须为站内 API");
     const headers = new Headers(init.headers);
@@ -50,11 +53,11 @@ export class ApiClient {
     if (response.status === 401) { this.clearSession(); this.unauthorized?.(); }
     let payload: unknown;
     try { payload = await response.json(); }
-    catch { throw new ApiError("INVALID_RESPONSE", "服务响应无法读取，请稍后重试"); }
+    catch { throw new ApiError(response.status === 401 ? "AUTH_REQUIRED" : "INVALID_RESPONSE", response.status === 401 ? "登录会话已失效，请重新登录" : "服务响应无法读取，请稍后重试"); }
     if (!response.ok) {
       const raw = payload as Partial<ErrorResponse>;
       const code = raw?.error?.code;
-      if (typeof code !== "string" || !Object.hasOwn(ERROR_DEFINITIONS, code)) throw new ApiError("INVALID_RESPONSE", "服务返回了未知错误");
+      if (typeof code !== "string" || !Object.hasOwn(ERROR_DEFINITIONS, code)) throw new ApiError(response.status === 401 ? "AUTH_REQUIRED" : "INVALID_RESPONSE", response.status === 401 ? "登录会话已失效，请重新登录" : "服务返回了未知错误");
       if (response.status !== 401 && (code === "AUTH_REQUIRED" || code === "SESSION_EXPIRED")) { this.clearSession(); this.unauthorized?.(); }
       throw new ApiError(code, ERROR_DEFINITIONS[code].message, raw.error?.requestId ?? "");
     }

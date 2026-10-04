@@ -8,7 +8,7 @@ export function mockMediaPlugin(): Plugin {
   return { name: "explicit-development-media-fixture", configureServer(server) {
     server.middlewares.use(async (req, res, next) => {
       const url = new URL(req.url ?? "/", "http://localhost");
-      if (!/^\/api\/videos\/[^/]+\/stream$/.test(url.pathname) || url.searchParams.get("devMock") !== "1") { next(); return; }
+      if (!/^\/api\/videos\/[^/]+\/stream$/.test(url.pathname) || !url.searchParams.get("playbackSessionId")) { next(); return; }
       res.setHeader("Cache-Control", "no-store"); res.setHeader("X-Content-Type-Options", "nosniff");
       if (!req.headers.cookie?.split("; ").includes("ov_dev_mock_session=active")) { res.statusCode = 401; res.end(); return; }
       if (req.method !== "GET" && req.method !== "HEAD") { res.statusCode = 405; res.end(); return; }

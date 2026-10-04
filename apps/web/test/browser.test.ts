@@ -5,16 +5,19 @@ import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
 
 test("安卓优先浏览器场景（明确开发 Mock）", async t => {
-  const server = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), mode: "mock" });
-  await server.listen();
-  const browser = await chromium.launch({ channel: "msedge", headless: true });
+  const server = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), mode: "mock", server: { port: 0 } });
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
+    await server.listen();
+    const address = server.httpServer?.address(); if (!address || typeof address === "string") throw new Error("Test server has no address");
+    const baseURL = `http://127.0.0.1:${address.port}`;
+    browser = await chromium.launch({ channel: "msedge", headless: true });
     const context = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     await context.addInitScript("window.__name = (fn) => fn;");
     const page = await context.newPage();
     page.setDefaultTimeout(5000);
     await t.test("骨架、Mock 标识与手机宽度", async () => {
-      await page.goto("http://127.0.0.1:5173");
+      await page.goto(baseURL);
       await expect(page.getByText("开发 Mock · 所有业务为模拟数据，未连接真实 OSS")).toBeVisible();
       await expect(page.getByRole("heading", { name: "安全登录" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -59,7 +62,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await page.getByLabel("重命名 新建分类样例").fill("珍藏");
       await page.getByLabel("重命名 新建分类样例").locator("..").locator("..").getByRole("button", { name: "保存名称" }).click();
       await expect(page.getByLabel("重命名 珍藏")).toBeVisible();
-      await page.goto("http://127.0.0.1:5173/videos/video-lake");
+      await page.goto(`${baseURL}/videos/video-lake`);
       await expect(page.getByRole("heading", { name: "山间的一次散步" })).toBeVisible();
       await page.getByRole("button", { name: "编辑信息" }).click();
       await page.getByLabel("视频标题", { exact: true }).fill("修改后的山间记录"); await page.getByLabel("视频分类").selectOption({ label: "珍藏" });
@@ -67,7 +70,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await expect(page.getByRole("heading", { name: "修改后的山间记录" })).toBeVisible();
       await page.getByRole("link", { name: "← 返回视频库" }).click();
       await page.getByRole("button", { name: "导入已有视频" }).click(); await page.getByRole("button", { name: "预览已有视频" }).click();
-      await page.getByRole("checkbox").check(); await page.getByRole("button", { name: "导入选中的 1 项" }).click();
+      await page.locator(".import-items").getByRole("checkbox").check(); await page.getByRole("button", { name: "导入选中的 1 项" }).click();
       await expect(page.getByText("已登记 1 个视频；", { exact: false })).toBeVisible();
       await expect(page.getByRole("heading", { name: "已有视频样例.mp4" })).toBeVisible();
     });
@@ -75,7 +78,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       const requests: string[] = []; const responses: number[] = [];
       page.on("request", request => { if (request.resourceType() === "media") requests.push(request.url()); });
       page.on("response", response => { if (response.request().resourceType() === "media") responses.push(response.status()); });
-      await page.goto("http://127.0.0.1:5173/videos/video-lake");
+      await page.goto(`${baseURL}/videos/video-lake`);
       await page.getByRole("button", { name: "开始播放", exact: true }).click();
       const video = page.locator("video");
       await expect(video).toBeVisible();
@@ -86,7 +89,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await expect.poll(async () => video.evaluate(node => (node as HTMLVideoElement).currentTime)).toBeGreaterThan(3.5);
       await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem("ov.dev-mock.data.v1") ?? "{}").videos.find((v: { id: string }) => v.id === "video-lake").lastPositionSeconds)).toBeGreaterThan(3.5);
       await page.getByRole("link", { name: "← 返回视频库" }).click();
-      await page.goto("http://127.0.0.1:5173/videos/video-lake");
+      await page.goto(`${baseURL}/videos/video-lake`);
       await page.getByRole("button", { name: /从 0:0[4-5] 继续/ }).click();
       await expect(page.getByText("已恢复至", { exact: false })).toBeVisible();
       const inspect = async () => page.evaluate(async () => { const path = "/src/api/mock.ts"; return (await import(path)).inspectMockPlayback() as { id: string; expiresAt: string }[]; });
@@ -99,10 +102,10 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await expect.poll(async () => page.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
       await expect.poll(async () => page.locator("video").evaluate(node => (node as HTMLVideoElement).currentTime)).toBeLessThan(.5);
       await page.getByRole("link", { name: "安全", exact: true }).click();
-      await expect(page.getByText("活动播放会话", { exact: true }).locator("..").locator("dd")).toHaveText("0");
-      await page.goto("http://127.0.0.1:5173/videos/video-lake");
+      await expect(page.getByText("活动播放会话", { exact: true }).locator("..").locator("dd")).toHaveText(/^0应用授权会话数/);
+      await page.goto(`${baseURL}/videos/video-lake`);
       expect(requests.length).toBeGreaterThan(0);
-      expect(requests.every(url => new URL(url).origin === "http://127.0.0.1:5173" && new URL(url).pathname.endsWith("/stream"))).toBe(true);
+      expect(requests.every(url => new URL(url).origin === baseURL && new URL(url).pathname.endsWith("/stream"))).toBe(true);
       expect(responses).toContain(206);
       await page.getByLabel("模拟场景").selectOption("limit");
       await page.getByRole("button", { name: /继续|开始播放|重新播放/ }).click();
@@ -190,7 +193,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
         const tiny = await page.locator("button:visible, input:not([type=checkbox]):visible, select:visible, .bottom-nav a:visible").evaluateAll(nodes => nodes.filter(node => { const rect = node.getBoundingClientRect(); return rect.height < 44 || rect.width < 44; }).map(node => node.tagName + ":" + node.textContent));
         expect(tiny).toEqual([]);
       };
-      await page.goto("http://127.0.0.1:5173/"); await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
+      await page.goto(`${baseURL}/`); await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
       await expect(page.locator(".video-card").first()).toBeVisible(); await expect(page.getByRole("button", { name: "旅行", exact: true })).toBeVisible(); await expect(page.getByRole("status", { name: "正在加载…" })).toHaveCount(0);
       await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.scrollTo(0, 0); });
       await page.screenshot({ path: `${qaDir}/phone-library.png`, fullPage: true }); await assertLayout();
@@ -200,11 +203,11 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await page.getByLabel("模拟场景").selectOption("offline"); await expect(page.getByRole("alert")).toContainText("连接中断"); await assertLayout();
       await page.getByLabel("模拟场景").selectOption("normal");
       await page.setViewportSize({ width: 812, height: 375 });
-      await page.goto("http://127.0.0.1:5173/videos/video-lake"); await page.getByRole("button", { name: /继续|开始播放|重新播放/ }).click(); await expect.poll(async () => page.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+      await page.goto(`${baseURL}/videos/video-lake`); await page.getByRole("button", { name: /继续|开始播放|重新播放/ }).click(); await expect.poll(async () => page.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
       expect(await page.locator("video").evaluate(node => getComputedStyle(node).objectFit)).toBe("contain"); await assertLayout();
       await page.screenshot({ path: `${qaDir}/landscape-player.png`, fullPage: true });
       await page.setViewportSize({ width: 375, height: 812 });
-      await page.goto("http://127.0.0.1:5173/videos/video-city"); await page.getByRole("button", { name: /继续|开始播放|重新播放/ }).click();
+      await page.goto(`${baseURL}/videos/video-city`); await page.getByRole("button", { name: /继续|开始播放|重新播放/ }).click();
       await expect.poll(async () => page.locator("video").evaluate(node => (node as HTMLVideoElement).videoHeight)).toBe(640);
       expect(await page.locator("video").evaluate(node => (node as HTMLVideoElement).videoWidth)).toBe(360);
       expect(await page.locator("video").evaluate(node => getComputedStyle(node).objectFit)).toBe("contain"); await assertLayout();
@@ -221,5 +224,5 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await page.setViewportSize({ width: 375, height: 812 });
     });
     await context.close();
-  } finally { await browser.close(); await server.close(); }
+  } finally { await browser?.close(); await server.close(); }
 });

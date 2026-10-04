@@ -1,16 +1,19 @@
 -- 第二阶段待执行变更块；2026-10-02；SQLite；UTF-8 无 BOM。
 -- 【已有库升级专用】空库没有categories表，不能从本文件开始执行。
--- 新空库请改用同目录01_EMPTY_DATABASE_FULL.sql：从users开始完整建表，每行SQL有中文说明。
+-- 新空库学习结构请看 docs/sql/01_EMPTY_DATABASE_FULL.sql；实际应用新库仍由有序迁移器创建。
 -- 不要将两份文件连续执行；完整脚本已经包含本文件新增的字段与表。
 -- 目标：已经通过 0001-initial.sql/account:init 初始化的正式库，基线迁移版本为 1。
 -- 本轮仅提供语句，未执行到现有数据库；禁止用于 sqlite-test.db，禁止重新初始化账号。
--- 当前迁移器仅支持版本 1：必须先完成 P2-CORE-01 的版本 2 接入，再备份并获得执行授权。
+-- 源码已接入版本 2；正式库仍须先一致性备份并获得目标/DDL执行授权。
 -- 事务/PRAGMA foreign_keys=ON/校验/ledger 版本与 SHA-256 记录由迁移器统一负责。
 -- 本文件故意不包含 BEGIN/COMMIT/ledger INSERT，避免与迁移器事务嵌套或产生伪造校验值。
--- 不要在 GUI 中直接粘贴到现有库；不包含 DROP、DELETE、清空、密钥或真实 OSS 地址。
+-- 不要在 GUI 中直接粘贴到现有库；仅 DROP 旧key唯一索引，不删除表/数据，不含密钥。
 -- 登录相关表 users/login_sessions/recovery_codes/login_attempts/audit_events 已在 0001 中存在并保留。
 
 ALTER TABLE categories ADD COLUMN archived_at TEXT; -- 给已存在的主分类表增加归档时间；NULL表示未归档
+ALTER TABLE categories ADD COLUMN name_key TEXT NOT NULL DEFAULT '';
+UPDATE categories SET name_key = lower(trim(name));
+CREATE UNIQUE INDEX stage2_category_names ON categories(owner_id, name_key);
 CREATE TRIGGER stage2_default_category_not_archived
 BEFORE UPDATE OF archived_at ON categories
 WHEN NEW.is_default = 1 AND NEW.archived_at IS NOT NULL
@@ -118,7 +121,7 @@ CREATE TABLE storage_objects (
       AND content_type IS NOT NULL AND length(content_type) > 0 AND verified_at IS NOT NULL))
 );
 CREATE UNIQUE INDEX stage2_storage_identity
-ON storage_objects(owner_id, provider, bucket, region, object_key, coalesce(version_id, ''));
+ON storage_objects(provider, bucket, region, object_key, coalesce(version_id, ''));
 
 CREATE TRIGGER stage2_storage_identity_immutable
 BEFORE UPDATE OF owner_id, provider, bucket, region, object_key ON storage_objects
@@ -180,3 +183,22 @@ CREATE TABLE storage_operations (
   FOREIGN KEY(owner_id, video_id) REFERENCES videos(owner_id, id)
 );
 CREATE INDEX stage2_storage_operation_state ON storage_operations(owner_id, state, updated_at);
+
+-- 原有 key 列继续保留原含义；唯一性改由完整对象身份与资产关系管理。
+DROP INDEX videos_owner_object;
+CREATE INDEX stage2_legacy_video_key ON videos(owner_id, original_key);
+CREATE UNIQUE INDEX stage2_original_asset_identity ON video_assets(owner_id, storage_object_id) WHERE asset_role = 'original';
+ALTER TABLE playback_sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'proxy' CHECK(mode IN ('proxy', 'oss'));
+ALTER TABLE playback_sessions ADD COLUMN source_expires_at TEXT;
+CREATE TABLE source_authorizations (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  login_session_id TEXT NOT NULL REFERENCES login_sessions(id),
+  video_id TEXT NOT NULL,
+  playback_session_id TEXT REFERENCES playback_sessions(id),
+  purpose TEXT NOT NULL CHECK(purpose IN ('playback','renewal','download')),
+  source_expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(owner_id, video_id) REFERENCES videos(owner_id,id)
+);
+CREATE INDEX stage2_authorizations_owner_time ON source_authorizations(owner_id, created_at);

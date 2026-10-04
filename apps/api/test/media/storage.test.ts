@@ -31,7 +31,7 @@ test("Mock 存储验证授权前缀、闭区间读取及 Multipart，不访问�
 });
 
 const ossOptions: OssOptions = { bucket: "test-bucket", region: "cn-hangzhou", endpoint: "https://oss-cn-hangzhou-internal.aliyuncs.com",
-  objectPrefix: "library/", network: "internal", credentialFile: "unused-test-secret" };
+  objectPrefix: "library/", network: "internal", credentialFile: "unused-test-secret", allowLegacyTestObjects: true };
 
 test("OSS 配置拒绝隐式公网和越界 endpoint；真 SDK 只连本地 HTTP，验证 V4/Range/未返回请求取消", async t => {
   for (const config of [{ ...ossOptions, endpoint: "http://oss-cn-hangzhou-internal.aliyuncs.com" },
@@ -82,6 +82,7 @@ test("真 ali-oss SDK 在本地 HTTP 验证 Readable 分片与完成清单、限
     }
     if (request.method === "POST") {
       assert.equal(request.headers["x-oss-forbid-overwrite"], "true");
+      assert.equal(request.headers["x-oss-object-acl"], "private");
       for await (const chunk of request) completionXml += String(chunk); completed = true;
       response.setHeader("content-type", "application/xml"); response.end('<CompleteMultipartUploadResult><Bucket>test-bucket</Bucket><Key>library/new</Key><ETag>object-etag</ETag></CompleteMultipartUploadResult>'); return;
     }

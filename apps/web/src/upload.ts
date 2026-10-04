@@ -1,6 +1,12 @@
 import { isPartChecksum, PART_CHECKSUM_ALGORITHM, UPLOAD_STATUSES } from "@online-video/shared";
-import type { CompleteUploadResponse, UploadedPart, UploadTask } from "@online-video/shared";
+import type { ApplicationLimits, CompleteUploadResponse, UploadedPart, UploadTask } from "@online-video/shared";
 import { ApiClient, ApiError } from "./api/client";
+
+export function validateUploadSize(sizeBytes: number, limits: ApplicationLimits) {
+  if (!limits || !Number.isSafeInteger(limits.maxUploadBytes) || limits.maxUploadBytes <= 0) throw new ApiError("INVALID_RESPONSE", "服务端单文件上限无法确认，暂不能上传");
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) throw new ApiError("VALIDATION_ERROR", "请选择非空视频文件");
+  if (sizeBytes > limits.maxUploadBytes) throw new ApiError("VALIDATION_ERROR", `视频超过单文件上限 ${limits.maxUploadBytes.toLocaleString("zh-CN")} 字节（${(limits.maxUploadBytes / 1073741824).toLocaleString("zh-CN")} GiB），请选择较小文件`);
+}
 
 export async function checksum(blob: Blob): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new ApiError("SERVICE_NOT_CONFIGURED", "当前浏览器无法安全计算分片校验；请使用 HTTPS 或本机 localhost");

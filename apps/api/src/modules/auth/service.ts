@@ -129,7 +129,7 @@ export async function initializeAccount(database: AppDatabase, masterKey: Buffer
   const id = randomUUID(); const at = new Date().toISOString();
   database.client.transaction(() => {
     database.orm.insert(s.users).values({ id, displayName, passwordHash, totpCipher: encryptSecret(factor.secret.base32, masterKey), createdAt: at }).run();
-    database.orm.insert(s.categories).values({ id: randomUUID(), ownerId: id, name: "未分类", sortOrder: 0, isDefault: true, createdAt: at }).run();
+    database.orm.insert(s.categories).values({ id: randomUUID(), ownerId: id, name: "未分类", nameKey: "未分类", sortOrder: 0, isDefault: true, createdAt: at }).run();
     for (const code of recovery) database.orm.insert(s.recoveryCodes).values({ id: randomUUID(), ownerId: id, codeHash: tokenHash(code) }).run();
     database.orm.insert(s.auditEvents).values({ id: randomUUID(), ownerId: id, action: "account_initialized", createdAt: at }).run();
   }).immediate();

@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API：真实配置与已有数据库",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/apps/api",
+      "program": "${workspaceFolder}/apps/api/src/server.ts",
+      "runtimeArgs": ["--env-file-if-exists=../../.env", "--import", "tsx"],
+      "preLaunchTask": "构建共享类型",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "前端：Edge 本地页面",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/apps/web"
+    }
+  ]
+}
