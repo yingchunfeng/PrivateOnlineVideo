@@ -50,7 +50,7 @@ test("畸形 401 必须清会话，原型属性不能充当错误码", async () 
 });
 
 test("真业务 auth 客户端恢复/登录校验与退出/撤销路由", async () => {
-  const session = { user: { id: "本人", displayName: "本人", totpEnabled: true }, csrfToken: "csrf-value" };
+  const session = { user: { id: "本人", displayName: "本人", totpEnabled: true, authMethod: "totp" as const, authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "csrf-value" };
   const calls: { path: string; init?: RequestInit }[] = [];
   const client = new ApiClient(async (path, init) => { calls.push({ path, ...(init ? { init } : {}) }); return Response.json({ data: path === "/api/auth/me" || path === "/api/auth/login" ? session : { success: true } }); });
   const auth = authApi(client);

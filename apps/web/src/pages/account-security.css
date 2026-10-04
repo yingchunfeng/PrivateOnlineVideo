@@ -1,0 +1,11 @@
+.account-security, .account-form, .account-form-grid, .account-form form { min-width: 0; }
+.account-form { overflow-wrap: anywhere; }
+.account-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.account-form .stack, .account-form label, .account-form .notice { min-width: 0; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.account-actions > button { flex: 1 1 160px; white-space: normal; }
+.account-steps { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0; padding-left: 22px; color: var(--text-secondary); }
+.account-steps [aria-current="step"] { color: var(--accent); font-weight: 650; }
+.account-security .metadata dd { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .account-form-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .account-actions > button { flex-basis: 100%; } }

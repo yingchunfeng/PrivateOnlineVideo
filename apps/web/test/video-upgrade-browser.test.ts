@@ -17,7 +17,7 @@ async function openBrowser() {
 }
 const initialConfig = (): LibraryConfiguration => ({ version: "v1", writable: true, categories: [{ id: "base", name: "基线分类", enabled: true, isDefault: true, tagIds: ["shared"], videoCount: 1, uploadCount: 0 }, { id: "empty", name: "空分类", enabled: true, isDefault: false, tagIds: ["shared"], videoCount: 0, uploadCount: 0 }], tags: [{ id: "shared", name: "共享标签", enabled: true, categoryIds: ["base", "empty"], videoCount: 1, uploadCount: 0 }] });
 const library = (config: LibraryConfiguration) => ({ mediaBaseUrl: "https://oss.meetdawn.top", objectPrefix: "onlineVideo/", categories: config.categories.map(category => ({ id: category.id, name: category.name, enabled: category.enabled, tags: config.tags.filter(tag => tag.enabled && category.tagIds.includes(tag.id)).map(tag => tag.name) })) });
-const owner = { user: { id: "loopback-owner", displayName: "隔离页面测试", totpEnabled: true }, csrfToken: "fixture-csrf" };
+const owner = { user: { id: "loopback-owner", displayName: "隔离页面测试", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "fixture-csrf" };
 
 test("手动封面真实解码：取消、区间缓存、微调、独立保存、恢复、短片异常与最终上传图片", { timeout: 120000 }, async t => {
   const { server, browser, origin } = await openBrowser();

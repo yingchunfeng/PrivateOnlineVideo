@@ -11,7 +11,7 @@ import type { LibraryConfiguration, SaveLibraryConfigurationRequest, VideoDetail
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const evidenceRoot = fileURLToPath(new URL(`../../../.local/acceptance/library-workflow-${randomUUID()}/`, import.meta.url));
-const owner = { user: { id: "isolated-owner", displayName: "界面验收", totpEnabled: true }, csrfToken: "fixture-csrf" };
+const owner = { user: { id: "isolated-owner", displayName: "界面验收", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "fixture-csrf" };
 const configuration = (): LibraryConfiguration => ({
   version: "v1", writable: true,
   categories: [

@@ -1,5 +1,5 @@
-import { CSRF_HEADER, ERROR_DEFINITIONS, isPartChecksum, PART_CHECKSUM_HEADER } from "@online-video/shared";
-import type { ApplicationUsage, AuthSession, Category, CreateUploadRequest, ErrorCode, ImportPreview, LibraryConfiguration, LibraryGroup, LoginRequest, LoginSession, PlaybackSession, SaveLibraryConfigurationRequest, Tag, UploadTask, VideoDetail, UploadedPart } from "@online-video/shared";
+import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, PART_CHECKSUM_HEADER, SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
+import type { ApplicationUsage, AuthSession, Category, CreateUploadRequest, EmailChallenge, EmailChallengePurpose, ErrorCode, ImportPreview, LibraryConfiguration, LibraryGroup, LoginRequest, LoginSession, PlaybackSession, SaveLibraryConfigurationRequest, Tag, UploadTask, VideoDetail, UploadedPart } from "@online-video/shared";
 import type { Transport } from "./client";
 
 export const mockScenarios = { normal: "正常", empty: "空视频库", long: "长标题", offline: "网络中断", expired: "会话过期", limit: "流量已达上限", unconfigured: "限额未配置", unlimited: "显式不限额", storage: "存储不可用", uploadFailure: "分片失败一次", completeFailure: "完成失败一次", finalizing: "遗留完成中任务", unknownUsage: "未知统计来源", usageUnavailable: "用量不可用" } as const;
@@ -32,11 +32,49 @@ const failedCompletions = new Set<string>();
 let otherSession = true;
 const loggedIn = () => document.cookie.split("; ").includes("ov_dev_mock_session=active");
 const setLogin = (active: boolean) => { document.cookie = `ov_dev_mock_session=${active ? "active" : ""}; Path=/; SameSite=Strict${active ? "" : "; Max-Age=0"}`; };
-const authSession = (): AuthSession => ({ user: { id: "mock-owner", displayName: "我的私人空间", totpEnabled: true }, csrfToken: csrf });
+// 开发 Mock 的账号与验证状态只在内存中保存，不作为真实账户资料。
+const account = { password: "demo-password", authMethod: "totp" as "totp" | "email", authVersion: 1, email: null as string | null, emailVerifiedAt: null as string | null };
+type MockOperation = { id: string; kind: "bind_email" | "change_password" | "change_email"; target: string; version: number; oldVerified: boolean; active: boolean; expiresAt: string };
+type MockChallenge = EmailChallenge & { purpose: EmailChallengePurpose; target: string; version: number; used: boolean; attempts: number };
+const operations = new Map<string, MockOperation>();
+const challenges = new Map<string, MockChallenge>();
+const maskedEmail = (email: string) => { const [name, domain] = email.split("@"); return `${name?.slice(0, 1)}***@${domain}`; };
+const authSession = (): AuthSession => ({ user: { id: "mock-owner", displayName: "我的私人空间", totpEnabled: true, authMethod: account.authMethod, authVersion: account.authVersion, emailMasked: account.email ? maskedEmail(account.email) : null, emailVerified: !!account.emailVerifiedAt }, csrfToken: csrf });
 const ok = (data: unknown) => Response.json({ data });
 const fail = (code: ErrorCode) => Response.json({ error: { code, message: ERROR_DEFINITIONS[code].message, requestId: `mock-${crypto.randomUUID()}` } }, { status: ERROR_DEFINITIONS[code].status });
 const id = () => crypto.randomUUID();
 const bodyOf = <T>(init?: RequestInit): T => JSON.parse(typeof init?.body === "string" ? init.body : "{}") as T;
+function mockOperation(kind: MockOperation["kind"], target: string) {
+  const operation: MockOperation = { id: id(), kind, target, version: account.authVersion, oldVerified: false, active: true, expiresAt: new Date(Date.now() + 900000).toISOString() };
+  operations.set(operation.id, operation); return operation;
+}
+function operationOf(operationId: unknown, kind?: MockOperation["kind"]) {
+  const operation = typeof operationId === "string" ? operations.get(operationId) : undefined;
+  return operation?.active && operation.version === account.authVersion && Date.parse(operation.expiresAt) > Date.now() && (!kind || operation.kind === kind) ? operation : undefined;
+}
+function issueMockCode(purpose: EmailChallengePurpose, target: string, operation: MockOperation | undefined) {
+  if ([...challenges.values()].some(challenge => challenge.version === account.authVersion && challenge.purpose === purpose && Date.parse(challenge.resendAt) > Date.now())) return fail("EMAIL_SEND_COOLDOWN");
+  for (const challenge of challenges.values()) if (challenge.purpose === purpose) challenge.used = true;
+  const challenge: MockChallenge = { challengeId: id(), operationId: operation?.id ?? null, maskedEmail: maskedEmail(target), serverTime: now(), expiresAt: new Date(Date.now() + 300000).toISOString(), resendAt: new Date(Date.now() + 60000).toISOString(), purpose, target, version: account.authVersion, used: false, attempts: 0 };
+  challenges.set(challenge.challengeId, challenge);
+  const { purpose: _purpose, target: _target, version: _version, used: _used, attempts: _attempts, ...response } = challenge;
+  return ok(response);
+}
+function checkMockCode(body: { challengeId?: string; code?: string }, purpose: EmailChallengePurpose, target: string, operationId: string | null): ErrorCode | undefined {
+  const challenge = body.challengeId ? challenges.get(body.challengeId) : undefined;
+  if (!challenge || challenge.used || challenge.version !== account.authVersion || challenge.purpose !== purpose || challenge.target !== target || challenge.operationId !== operationId || Date.parse(challenge.expiresAt) <= Date.now()) return "EMAIL_CHALLENGE_EXPIRED";
+  if (challenge.attempts >= 5) return "EMAIL_CODE_ATTEMPTS_EXCEEDED";
+  // 固定码仅用于显式开发 Mock；生产构建不会加载此模块。
+  if (body.code !== "123456") { challenge.attempts++; return challenge.attempts >= 5 ? "EMAIL_CODE_ATTEMPTS_EXCEEDED" : "EMAIL_CODE_INVALID"; }
+  challenge.used = true; return undefined;
+}
+function completeMockChange(notificationStatus: "not_required" | "sent") {
+  account.authVersion++;
+  for (const challenge of challenges.values()) challenge.used = true;
+  for (const operation of operations.values()) operation.active = false;
+  setLogin(false);
+  return ok({ success: true, reloginRequired: true, notificationStatus });
+}
 
 export function createMockTransport(): Transport {
   return async (input, init) => {
@@ -49,9 +87,22 @@ export function createMockTransport(): Transport {
     const url = new URL(input, window.location.origin);
     const path = url.pathname;
     const method = init?.method ?? "GET";
+    if (path === "/api/auth/login/options" && method === "GET") return ok({ authMethod: account.authMethod, serverTime: now(), emailProviders: [...SUPPORTED_EMAIL_PROVIDERS] });
+    if (path === "/api/auth/login/code" && method === "POST") {
+      const body = bodyOf<{ password?: string; email?: unknown }>(init);
+      if (body.email !== undefined) return fail("VALIDATION_ERROR");
+      if (body.password !== account.password) return fail("INVALID_CREDENTIALS");
+      if (account.authMethod !== "email" || !account.email || !account.emailVerifiedAt) return fail("AUTH_METHOD_MISMATCH");
+      return issueMockCode("login", account.email, undefined);
+    }
     if (path === "/api/auth/login" && method === "POST") {
       const body = bodyOf<LoginRequest>(init);
-      if (body.password !== "demo-password" || body.totp !== "123456") return fail("AUTH_REQUIRED");
+      if ((body.authMethod ?? "totp") !== account.authMethod) return fail("AUTH_METHOD_MISMATCH");
+      if (body.password !== account.password) return fail("INVALID_CREDENTIALS");
+      if (body.authMethod === "email") {
+        if (!account.email || !account.emailVerifiedAt) return fail("EMAIL_REQUIRED");
+        const error = checkMockCode(body, "login", account.email, null); if (error) return fail(error);
+      } else if (body.totp !== "123456") return fail("INVALID_CREDENTIALS");
       setLogin(true); if (scenario === "expired") scenario = "normal";
       return ok(authSession());
     }
@@ -59,6 +110,57 @@ export function createMockTransport(): Transport {
     if (!loggedIn() || scenario === "expired") { if (scenario === "expired") setLogin(false); return fail("SESSION_EXPIRED"); }
     if (!["GET", "HEAD"].includes(method) && new Headers(init?.headers).get(CSRF_HEADER) !== csrf) return fail("CSRF_REJECTED");
     if (path === "/api/auth/me") return ok(authSession());
+    if (path === "/api/auth/security" && method === "GET") return ok({ authMethod: account.authMethod, authVersion: account.authVersion, email: account.email, emailVerified: !!account.emailVerifiedAt, emailVerifiedAt: account.emailVerifiedAt, totpAvailable: true, serverTime: now(), emailProviders: [...SUPPORTED_EMAIL_PROVIDERS] });
+    if (path === "/api/auth/operations/cancel" && method === "POST") {
+      const body = bodyOf<{ operationId?: string }>(init); const operation = body.operationId ? operations.get(body.operationId) : undefined;
+      if (operation) { operation.active = false; for (const challenge of challenges.values()) if (challenge.operationId === operation.id) challenge.used = true; }
+      return ok({ success: true });
+    }
+    if (path === "/api/auth/email/change/new/code" && method === "POST") {
+      const body = bodyOf<{ operationId?: string }>(init); const operation = operationOf(body.operationId, "change_email");
+      if (!operation?.oldVerified) return fail("ACCOUNT_OPERATION_INVALID");
+      return issueMockCode("change_email_new", operation.target, operation);
+    }
+    if (["/api/auth/email/bind/code", "/api/auth/email/bind/confirm", "/api/auth/password/code", "/api/auth/password/confirm", "/api/auth/email/change/old/code", "/api/auth/email/change/old/verify", "/api/auth/email/change/confirm"].includes(path) && method === "POST") {
+      const body = bodyOf<{ currentPassword?: string; totp?: string; email?: string; newEmail?: string; newPassword?: string; confirmPassword?: string; operationId?: string; challengeId?: string; code?: string }>(init);
+      if (body.currentPassword !== account.password) return fail("SECONDARY_AUTH_FAILED");
+      if (path.startsWith("/api/auth/email/bind/")) {
+        if (account.authMethod !== "totp") return fail("AUTH_METHOD_MISMATCH");
+        if (body.totp !== "123456") return fail("SECONDARY_AUTH_FAILED");
+        if (path.endsWith("/code")) {
+          const target = body.email?.trim().toLowerCase(); if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) return fail("VALIDATION_ERROR");
+          if (!findEmailProvider(target)) return fail("EMAIL_PROVIDER_UNSUPPORTED");
+          return issueMockCode("bind_email", target, mockOperation("bind_email", target));
+        }
+        const operation = operationOf(body.operationId, "bind_email"); if (!operation) return fail("ACCOUNT_OPERATION_INVALID");
+        const error = checkMockCode(body, "bind_email", operation.target, operation.id); if (error) return fail(error);
+        account.email = operation.target; account.emailVerifiedAt = now(); account.authMethod = "email";
+        return completeMockChange("not_required");
+      }
+      if (account.authMethod !== "email" || !account.email || !account.emailVerifiedAt) return fail("EMAIL_REQUIRED");
+      if (path === "/api/auth/password/code") return issueMockCode("change_password", account.email, mockOperation("change_password", account.email));
+      if (path === "/api/auth/password/confirm") {
+        if (!body.newPassword || body.newPassword.length < 12 || body.newPassword.length > 128 || body.newPassword !== body.confirmPassword) return fail("PASSWORD_POLICY_FAILED");
+        if (body.newPassword === account.password) return fail("PASSWORD_UNCHANGED");
+        const operation = operationOf(body.operationId, "change_password"); if (!operation) return fail("ACCOUNT_OPERATION_INVALID");
+        const error = checkMockCode(body, "change_password", account.email, operation.id); if (error) return fail(error);
+        account.password = body.newPassword; return completeMockChange("sent");
+      }
+      if (path === "/api/auth/email/change/old/code") {
+        const target = body.newEmail?.trim().toLowerCase(); if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) return fail("VALIDATION_ERROR");
+        if (target && !findEmailProvider(target)) return fail("EMAIL_PROVIDER_UNSUPPORTED");
+        if (target === account.email) return fail("EMAIL_UNCHANGED");
+        return issueMockCode("change_email_old", account.email, mockOperation("change_email", target));
+      }
+      const operation = operationOf(body.operationId, "change_email"); if (!operation) return fail("ACCOUNT_OPERATION_INVALID");
+      if (path === "/api/auth/email/change/old/verify") {
+        const error = checkMockCode(body, "change_email_old", account.email, operation.id); if (error) return fail(error);
+        operation.oldVerified = true; return ok({ operationId: operation.id, targetEmailMasked: maskedEmail(operation.target), expiresAt: operation.expiresAt, serverTime: now() });
+      }
+      if (!operation.oldVerified) return fail("ACCOUNT_OPERATION_INVALID");
+      const error = checkMockCode(body, "change_email_new", operation.target, operation.id); if (error) return fail(error);
+      account.email = operation.target; account.emailVerifiedAt = now(); return completeMockChange("sent");
+    }
     if (path === "/api/auth/logout") { setLogin(false); return ok({ success: true }); }
     if (path === "/api/auth/sessions") {
       const current: LoginSession = { id: "mock-current", createdAt: now(), lastSeenAt: now(), expiresAt: expires(), isCurrent: true };

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
-import { guardDatabasePath, migrateDatabase, openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
+import { guardDatabasePath, migrateDatabase, MIGRATIONS, openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
 import { createRepositories } from "../src/db/repositories.js";
 import * as s from "../src/db/schema.js";
 import type { AuthPrincipal, VideoRecord } from "../src/core/contracts/index.js";
@@ -20,7 +20,7 @@ function fixture(path = ":memory:", initialize = true) {
     database.orm.insert(s.loginSessions).values({ id: "login", ownerId: "owner", tokenHash: "test-hash", createdAt: clock.at.toISOString(), lastSeenAt: clock.at.toISOString(), expiresAt: "2026-10-02T10:00:00.000Z" }).run();
   }
   const repos = createRepositories(database, () => clock.at);
-  const principal: AuthPrincipal = { user: { id: "owner", displayName: "测试", totpEnabled: true }, loginSessionId: "login" };
+  const principal: AuthPrincipal = { user: { id: "owner", displayName: "测试", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "login" };
   const video: VideoRecord = { ownerId: "owner", originalObject: { key: "library/video.mp4" }, playbackObject: { key: "library/video.mp4" }, thumbnailObject: null,
     video: { id: "video", title: "原视频", categoryId: "category", durationSeconds: null, sizeBytes: 8, status: "ready", thumbnailUrl: null,
       createdAt: clock.at.toISOString(), codec: "h264/aac", width: 640, height: 360, playable: true, lastPositionSeconds: 0 } };
@@ -32,7 +32,7 @@ test("迁移版本/校验、单人和安全路径：拒绝测试库与未知数�
   const f = fixture();
   try {
     migrateDatabase(f.database.client);
-    assert.equal((f.database.client.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count, 2);
+    assert.equal((f.database.client.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count, MIGRATIONS.length);
     assert.throws(() => f.database.orm.insert(s.users).values({ id: "another", displayName: "用户2", passwordHash: "x", totpCipher: "x", createdAt: f.clock.at.toISOString() }).run());
     f.database.client.prepare("UPDATE schema_migrations SET checksum='changed'").run();
     assert.throws(() => migrateDatabase(f.database.client));

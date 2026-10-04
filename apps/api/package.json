@@ -7,6 +7,7 @@
     "dev": "node --env-file-if-exists=../../.env --watch --import tsx src/server.ts",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "db:migrate": "node --import tsx src/db/migrate-cli.ts",
+    "mail:configure": "node --env-file-if-exists=../../.env --import tsx scripts/smtp-config.ts",
     "account:init": "node --env-file-if-exists=../../.env --import tsx src/modules/auth/account-cli.ts init",
     "account:recover": "node --env-file-if-exists=../../.env --import tsx src/modules/auth/account-cli.ts recover",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
@@ -22,7 +23,14 @@
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
     "jpeg-js": "0.4.4",
+    "nodemailer": "10.0.14",
     "otpauth": "9.5.2"
   },
-  "devDependencies": { "@types/ali-oss": "6.23.3", "@types/better-sqlite3": "9.6.0", "@types/node": "22.20.4", "tsx": "4.23.15" }
+  "devDependencies": {
+    "@types/ali-oss": "6.23.3",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "22.20.4",
+    "@types/nodemailer": "8.0.2",
+    "tsx": "4.23.15"
+  }
 }

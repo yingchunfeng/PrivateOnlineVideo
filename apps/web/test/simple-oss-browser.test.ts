@@ -32,7 +32,7 @@ test("公共页面配置、上传/登记/编辑与原生播放器，不调用私
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       if (method !== "GET") mutations.push({ path, body });
       const ok = (data: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data }) });
-      if (path === "/api/auth/me") return ok({ user: { id: "fixture-owner", displayName: "页面测试", totpEnabled: true }, csrfToken: "fixture-csrf" });
+      if (path === "/api/auth/me") return ok({ user: { id: "fixture-owner", displayName: "页面测试", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "fixture-csrf" });
       if (path === "/api/library") return ok(library);
       if (path === "/api/library/configuration") return ok({ version: "fixture-v1", writable: false, categories: library.categories.map(category => ({ id: category.id, name: category.name, enabled: category.enabled !== false, tagIds: [], isDefault: false, videoCount: 0, uploadCount: 0 })), tags: [] });
       if (path === "/api/settings/limits") return ok({ maxUploadBytes: 2147483648, partSizeBytes: 262144, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });

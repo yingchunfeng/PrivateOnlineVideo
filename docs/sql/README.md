@@ -1,5 +1,11 @@
 # SQLite 完整建表与已有库升级说明
 
+2026-10-04 多邮箱更新：最新迁移链追加 [0005-smtp-providers.sql](../../apps/api/src/db/migrations/0005-smtp-providers.sql)，结构为 v5/32 表，新增支持类型和多账号配置表，保留旧 SMTP 表。授权码只通过 [本地配置命令](../SMTP_PROVIDERS.md) 加密写入，不能放进 SQL。
+
+2026-10-04 SMTP 更新：最新应用结构为 0001 → 0002 → 0003 → [0004-smtp-config.sql](../../apps/api/src/db/migrations/0004-smtp-config.sql)，共 30 张表；0004 只追加 SMTP 表。历史空库脚本仍为 v2，不用于重建正式库。授权码不得写进 SQL，使用 [SMTP 配置命令](../SMTP.md) 加密保存。
+
+2026-10-04 账号邮箱认证新增源码版本 3；[0003-account-email.sql](../../apps/api/src/db/migrations/0003-account-email.sql) 为单独追加迁移。下文和 `01_EMPTY_DATABASE_FULL.sql` 保留第二阶段 v2 的历史结构说明，最新应用结构应通过 0001 → 0002 → 0003 迁移获得；不把手工空 ledger 当成正式库，不对既有正式库执行完整建表脚本。本轮不升级正式库，授权与一致性备份方案见 [账号邮箱实现记录](../ACCOUNT_EMAIL_IMPLEMENTATION.md)。
+
 **2026-10-02最新：用户授权正式目标备份升级后，主控已执行0002，正式 `.local/data/video-library.db` 为25表/版本2/users=1，旧13表旧列SHA和计数保留，integrityok/fk0。** `sqlite-test.db` 仍24表/users=0/ledger为空，不再建表或升级。实际备份及验证报告见[后端交接](../STAGE2_BACKEND_HANDOFF.md)。
 
 [01_EMPTY_DATABASE_FULL.sql](01_EMPTY_DATABASE_FULL.sql)只用于另一个新空库或阅读结构：从users开始建24表，每行中文注释；以下Navicat步骤保留为新空库操作说明，不用于重建现有库。

@@ -1,3 +1,5 @@
+import type { EmailProviderType } from "./email.js";
+
 /** 输出时间统一为 UTC ISO 8601，例如 2026-10-01T10:00:00.000Z。 */
 export type IsoDateTime = string;
 /** Bytes 是非负安全整数，1 byte = 1 字节；秒数允许非负小数。 */
@@ -13,7 +15,8 @@ export type UploadStatus = typeof UPLOAD_STATUSES[number];
 export interface ApiResponse<T> { data: T }
 export interface Page<T> { items: T[]; page: number; pageSize: number; total: number }
 export interface PaginationQuery { page?: number; pageSize?: number }
-export interface CurrentUser { id: ResourceId; displayName: string; totpEnabled: boolean }
+export type AuthMethod = "totp" | "email";
+export interface CurrentUser { id: ResourceId; displayName: string; totpEnabled: boolean; authMethod: AuthMethod; authVersion: number; emailMasked: string | null; emailVerified: boolean }
 export interface Category { id: ResourceId; name: string; sortOrder: number; isDefault?: boolean; archivedAt?: IsoDateTime | null }
 export interface LibraryGroup { id: ResourceId; name: string; description: string; sortOrder: number; createdAt: IsoDateTime; updatedAt: IsoDateTime; archivedAt: IsoDateTime | null }
 export interface Tag { id: ResourceId; name: string; createdAt: IsoDateTime; updatedAt: IsoDateTime; archivedAt: IsoDateTime | null }
@@ -153,7 +156,28 @@ export interface ImportPreview { id: ResourceId; items: ImportPreviewItem[]; exp
 
 export interface HealthData { status: "ok" }
 export type HealthResponse = ApiResponse<HealthData>;
-export interface LoginRequest { password: string; totp: string }
+/** 无 authMethod 的旧请求仅在账号处于 TOTP 模式时兼容。 */
+export type LoginRequest =
+  | { authMethod?: "totp"; password: string; totp: string; challengeId?: never; code?: never }
+  | { authMethod: "email"; password: string; challengeId: ResourceId; code: string; totp?: never };
+/** 未登录摘要不披露邮箱；密码验证通过后的发码响应才返回脱敏邮箱。 */
+export interface LoginOptions { authMethod: AuthMethod; serverTime: IsoDateTime; emailProviders: EmailProviderType[] }
+export interface LoginCodeRequest { password: string }
+export type EmailChallengePurpose = "login" | "bind_email" | "change_password" | "change_email_old" | "change_email_new";
+export interface EmailChallenge { challengeId: ResourceId; operationId: ResourceId | null; maskedEmail: string; serverTime: IsoDateTime; expiresAt: IsoDateTime; resendAt: IsoDateTime }
+export interface AccountSecuritySummary { authMethod: AuthMethod; authVersion: number; email: string | null; emailVerified: boolean; emailVerifiedAt: IsoDateTime | null; totpAvailable: boolean; serverTime: IsoDateTime; emailProviders: EmailProviderType[] }
+export interface BindEmailRequest { currentPassword: string; totp: string; email: string }
+export interface BindEmailConfirmRequest { currentPassword: string; totp: string; operationId: ResourceId; challengeId: ResourceId; code: string }
+export interface PasswordCodeRequest { currentPassword: string }
+export interface ChangePasswordRequest { currentPassword: string; newPassword: string; confirmPassword: string; operationId: ResourceId; challengeId: ResourceId; code: string }
+/** 旧邮箱授权从创建起即绑定目标；变更目标必须取消并重新验证。 */
+export interface ChangeEmailRequest { currentPassword: string; newEmail: string }
+export interface VerifyOldEmailRequest { currentPassword: string; operationId: ResourceId; challengeId: ResourceId; code: string }
+export interface AccountOperationRequest { operationId: ResourceId }
+export interface EmailChangeAuthorization { operationId: ResourceId; targetEmailMasked: string; expiresAt: IsoDateTime; serverTime: IsoDateTime }
+export interface ChangeEmailConfirmRequest { currentPassword: string; operationId: ResourceId; challengeId: ResourceId; code: string }
+export type NotificationStatus = "not_required" | "pending" | "sent" | "failed";
+export interface AccountMutationResult { success: true; reloginRequired: true; notificationStatus: NotificationStatus }
 export type LoginResponse = ApiResponse<AuthSession>;
 export type MeResponse = ApiResponse<AuthSession>;
 export type MutationResponse = ApiResponse<{ success: true }>;

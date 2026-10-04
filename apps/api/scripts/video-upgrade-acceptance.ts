@@ -25,9 +25,14 @@ const report: Record<string, any> = { startedAt: new Date().toISOString(), phase
 const save = () => writeFile(reportFile, JSON.stringify(report, null, 2) + "\n", "utf8");
 const setup = JSON.parse(await readFile(resolve(".local/account-setup.json"), "utf8"));
 const database = new Database(resolve(".local/data/video-library.db"), { readonly: true, fileMustExist: true });
+const authColumns = database.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+if (authColumns.some(column => column.name === "auth_method")) {
+  const authentication = database.prepare("SELECT auth_method FROM users WHERE singleton=1").get() as { auth_method: string } | undefined;
+  if (authentication?.auth_method !== "totp") { database.close(); throw new Error("此历史真实 OSS 脚本仅支持 TOTP 账号；邮箱账号请使用交互登录及新账号隔离验收，禁止使用旧 TOTP 替代。初始化资料不是当前密码来源。"); }
+}
 const owner = database.prepare("SELECT id,password_hash,totp_cipher,last_totp_counter FROM users WHERE singleton=1").get() as any;
 database.close();
-assert.ok(await verifyPassword(owner.password_hash, setup.password), "沿用当前账号，不能重新初始化");
+assert.ok(await verifyPassword(owner.password_hash, setup.password), "初始化历史密码已与当前数据库不同，请改为当前凭据流程；不能重新初始化或覆盖账号");
 const secret = decryptSecret(owner.totp_cipher, await readMasterKey(resolve(".local/secrets/auth.key")));
 if (Math.floor(Date.now() / 30000) <= owner.last_totp_counter || Date.now() % 30000 > 26000) await new Promise(done => setTimeout(done, 31000 - Date.now() % 30000));
 const site = "http://127.0.0.1:5174";

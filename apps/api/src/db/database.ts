@@ -32,7 +32,7 @@ export function guardDatabasePath(path: string): string {
   if (!result.endsWith(".db")) throw new ConfigurationError("数据库必须是 .local 内的独立 .db 文件");
   return result;
 }
-export const MIGRATIONS = ["0001-initial.sql", "0002-library-organizing.sql"] as const;
+export const MIGRATIONS = ["0001-initial.sql", "0002-library-organizing.sql", "0003-account-email.sql", "0004-smtp-config.sql", "0005-smtp-providers.sql"] as const;
 export function migrationManifest() {
   return MIGRATIONS.map((name, index) => {
     const sql = readFileSync(new URL(`./migrations/${name}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");

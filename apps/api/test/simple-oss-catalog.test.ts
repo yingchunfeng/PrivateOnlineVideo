@@ -8,7 +8,7 @@ import { buildApp } from "../src/app.js";
 import { readConfig } from "../src/core/config.js";
 import { runtimeModules } from "../src/core/runtime.js";
 import { assertLibrarySelection, objectKeyFromPublicUrl, publicUrlFor, validateLibraryConfig } from "../src/core/library-config.js";
-import { openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
+import { MIGRATIONS, openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
 import { createRepositories } from "../src/db/repositories.js";
 import { AuthService } from "../src/modules/auth/service.js";
 import { readAuthSettings } from "../src/modules/auth/settings.js";
@@ -24,7 +24,7 @@ function fixture(path = ":memory:") {
   const database = openDatabase(path, { initialize: true });
   database.client.prepare("INSERT INTO users(id,display_name,password_hash,totp_cipher,created_at) VALUES('owner','隔离账号','test-only','test-only',?)").run(at);
   database.client.prepare("INSERT INTO categories(id,owner_id,name,name_key,is_default,created_at) VALUES('default','owner','未分类','未分类',1,?)").run(at);
-  const principal: AuthPrincipal = { user: { id: "owner", displayName: "隔离账号", totpEnabled: true }, loginSessionId: "login" };
+  const principal: AuthPrincipal = { user: { id: "owner", displayName: "隔离账号", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "login" };
   const config = { ...readConfig({ NODE_ENV: "test" }), library };
   const repositories = createRepositories(database, () => new Date(at), library);
   return { database, config, principal, repositories };
@@ -113,7 +113,7 @@ test("公开信息和标签在SQLite重开后保留，账号记录不变", async
     const record = await createRepositories(reopened, () => new Date(at), library).videos.findOwned("owner", videoId);
     assert.deepEqual(record!.video.tags, ["城市,夜景"]); assert.equal(record!.video.publicUrl, "https://oss.meetdawn.top/onlineVideo/default/preserved.mp4");
     assert.deepEqual(reopened.client.prepare("SELECT * FROM users").all(), account);
-    assert.deepEqual(reopened.client.prepare("SELECT version FROM schema_migrations ORDER BY version").all(), [{ version: 1 }, { version: 2 }]);
+    assert.deepEqual(reopened.client.prepare("SELECT version FROM schema_migrations ORDER BY version").all(), MIGRATIONS.map((_, index) => ({ version: index + 1 })));
   } finally { reopened.close(); }
 });
 

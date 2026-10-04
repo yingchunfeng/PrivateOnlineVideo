@@ -50,6 +50,12 @@ test("本地登录工具只读原账户，不消费TOTP；使用库中当前密�
   assert.equal((await loginMaterial(false, undefined, env, 150000)).alreadyUsed, true);
   const stale = resolve(directory, "stale-setup.json"); writeFileSync(stale, JSON.stringify({ password: "old-password" }), { encoding: "utf8", flag: "wx" });
   await assert.rejects(loginMaterial(true, stale, env, 150000), /密码已与当前账号不同/);
+  const emailDb = new Database(databasePath); emailDb.exec("ALTER TABLE users ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'totp'; ALTER TABLE users ADD COLUMN email TEXT; ALTER TABLE users ADD COLUMN email_verified_at TEXT;");
+  emailDb.prepare("UPDATE users SET auth_method='email',email='owner@example.invalid',email_verified_at='2026-10-04'").run(); emailDb.close();
+  const emailDigest = digest(); const emailMaterial = await loginMaterial(false, undefined, env, 150000);
+  assert.equal(emailMaterial.authMethod, "email"); assert.equal(emailMaterial.emailMasked, "o***@example.invalid"); assert.equal("totp" in emailMaterial, false); assert.equal("password" in emailMaterial, false); assert.match(emailMaterial.note, /不能用于普通登录/); assert.equal(digest(), emailDigest);
+  assert.match((await loginMaterial(true, setupFile, env, 150000)).passwordSource!, /初始化历史资料/);
+  await assert.rejects(loginMaterial(true, stale, env, 150000), /密码已与当前账号不同/);
 });
 
 test("工具可直接启动，帮助无需服务或OSS；输入错误不回显秘密", () => {

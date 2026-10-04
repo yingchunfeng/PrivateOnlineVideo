@@ -42,7 +42,7 @@ try {
       await service.recover(value.password, value.recoveryCode, async result => {
         const file = await open(output, "wx", 0o600); try { await file.writeFile(JSON.stringify(result, null, 2), "utf8"); await file.sync(); } finally { await file.close(); }
       });
-      console.log(`身份验证通过，TOTP 已更新、旧会话和旧恢复码已撤销。新绑定资料：${output}`);
+      console.log(`身份验证通过，已切回 TOTP 登录，旧会话、邮件操作和旧恢复码已撤销；原邮箱保留但需重新验证。新绑定资料：${output}`);
     } finally { database.close(); }
   } else throw new ConfigurationError("只允许本地 init 或 recover；没有公开注册/匿名重置入口");
 } catch (error) {

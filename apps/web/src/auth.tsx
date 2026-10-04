@@ -26,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [revision]);
-  const login = async (body: LoginRequest) => { const auth = await authApi(api).login(body); api.setSession(auth.csrfToken); setSession(auth); setExpired(false); };
+  const login = async (body: LoginRequest) => { const auth = await authApi(api).login(body); api.setSession(auth.csrfToken); setSession(auth); setError(undefined); setExpired(false); };
   const logout = async () => { await authApi(api).logout(); clear(); setExpired(false); };
   return <AuthContext.Provider value={{ session, loading, error, expired, refresh: () => setRevision(r => r + 1), login, logout, revoked: clear }}>{children}</AuthContext.Provider>;
 }

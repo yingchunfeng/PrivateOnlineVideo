@@ -25,7 +25,7 @@ export function fakeDependencies(config: AppConfig) {
     auth: { requireUser: async (request, { mutation }) => {
       if (request.headers.cookie !== headers.cookie) throw new HttpError("AUTH_REQUIRED");
       if (mutation && (request.headers["x-csrf-token"] !== headers["x-csrf-token"] || request.headers.origin !== headers.origin)) throw new HttpError("CSRF_REJECTED");
-      return { user: { id: "owner", displayName: "测试账户", totpEnabled: true }, loginSessionId: String(request.headers["x-test-session"] ?? "login") };
+      return { user: { id: "owner", displayName: "测试账户", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: String(request.headers["x-test-session"] ?? "login") };
     } },
     videos: { assertCategoryOwned: category,
       findOwned: async (owner, id) => { const video = videos.get(id); return video?.ownerId === owner ? video : null; },

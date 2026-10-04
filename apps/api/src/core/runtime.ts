@@ -11,7 +11,7 @@ import { recoverLibraryConfiguration } from "./library-configuration.js";
 import { resolve } from "node:path";
 import { WORKSPACE_ROOT } from "../db/database.js";
 
-/** 启动仅核验版本2，不执行迁移；公共上传使用服务端凭据，旧私有分支保留。 */
+/** 启动仅核验最新版本，不执行迁移；公共上传使用服务端凭据，旧私有分支保留。 */
 export async function runtimeModules(config: AppConfig, auth: AuthService, database: AppDatabase, now: () => Date = () => new Date()): Promise<Pick<BuildAppOptions, "backend" | "media">> {
   const limits = config.media;
   if (!limits || (config.libraryMode === "legacy" && config.maxPlaybackSessions === null)) throw new ConfigurationError("业务启动需要明确上传资源控制；旧播放模式还需会话限制，参见.env.example");

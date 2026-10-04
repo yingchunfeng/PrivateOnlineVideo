@@ -16,7 +16,7 @@ async function inspect(directory: string) {
     const content = await readFile(path); const name = relative(output, path).replace(/\\/g, "/");
     if (name.endsWith(".map") || /mock|fixtures/i.test(name)) throw new Error(`独立发布目录含开发产物：${name}`);
     const text = content.toString("utf8");
-    for (const marker of ["demo-password", "mock-owner", "ov.dev-mock", "devMock=1", "AccessKey", "totpSecret", "account-setup.json", "auth.key", "better-sqlite3", "ali-oss", "node:crypto", "node:fs"]) if (text.includes(marker)) throw new Error(`独立发布产物含禁止标记：${marker}`);
+    for (const marker of ["demo-password", "mock-owner", "ov.dev-mock", "devMock=1", "AccessKey", "totpSecret", "account-setup.json", "auth.key", "better-sqlite3", "ali-oss", "node:crypto", "node:fs", "SMTP_CONFIG_FILE", "smtp.json", "nodemailer", "mock-password", "MockMailSender"]) if (text.includes(marker)) throw new Error(`独立发布产物含禁止标记：${marker}`);
     files.push({ path: name, bytes: content.length, sha256: createHash("sha256").update(content).digest("hex") });
   }
 }

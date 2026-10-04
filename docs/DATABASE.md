@@ -1,5 +1,13 @@
 # CORE-02：SQLite 与 Repository
 
+2026-10-04 多邮箱更新：源码与正式库已为 v5/32 表，用户单独授权后已备份追加 `smtp_provider_types`、`smtp_provider_configs`，并保存 163 配置。旧 `smtp_config` 保留，QQ 配置、旧表业务记录及原密钥保持一致，两套授权码均加密保存。迁移、配置和验证证据见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)；服务启动仍不自动迁移。
+
+2026-10-04 SMTP 更新：源码新增 [0004-smtp-config.sql](../apps/api/src/db/migrations/0004-smtp-config.sql)，只追加单条站点 SMTP 配置表，授权码加密保存。用户明确授权后正式库已备份升级为 v4/30 张表并保存配置；旧表业务记录、原密钥、手工库和旧迁移校验保持一致。配置、备份与验证见 [SMTP 数据库配置](SMTP.md)。下文保留先前版本的历史验收记录。
+
+2026-10-04 07:34 UTC 授权升级补充：正式目标 `E:/onlineVideo/.local/data/video-library.db` 已先使用 SQLite backup API 新建一致性备份，再从 v2 升级到 v3。ledger 1/2/3 校验一致，29 张表，原有 25 张表全部旧列/记录校验一致；integrity_check=ok、外键异常 0。账号 1、恢复码 10、视频 8 均保留。证据见 [正式升级记录](ACCOUNT_EMAIL_IMPLEMENTATION.md#正式-v3-升级实际记录2026-10-04)。原开发阶段与 v1/v2 历史记录保留。
+
+2026-10-04 新增账号认证版本 3：仅追加 [0003-account-email.sql](../apps/api/src/db/migrations/0003-account-email.sql)，保留原 0001/0002 内容和校验和。users 增邮箱、验证时间、认证方式与版本；会话记录版本；新增持久验证码、账号操作、发码额度和安全通知状态表。旧账号默认保持 TOTP；正式库本轮未升级，启动仍拒绝旧版本而不自动迁移。设计、隔离验收及后续授权升级方案见 [本次实现记录](ACCOUNT_EMAIL_IMPLEMENTATION.md)。下文原 v1/v2 验收记录保留。
+
 2026-10-02 第二阶段源码支持有序版本1/2。**正式库已授权备份升级版本2/25表，账号仍1个；实云/业务登记后2视频/2上传/1分组/2标签、完整性ok/fk0，正常重启后库和兼容视频2秒进度恢复。** 账号静态密码/TOTP与10条恢复摘要保留，正常登录/审计/进度允许增加；手工库未改。实云后端只读及浏览器证据见[交接](STAGE2_BACKEND_HANDOFF.md)，最终网站/安卓/服务器部署另属第三阶段。
 
 使用 Navicat 在另一个新空库中学习结构，可阅读 [完整建表 SQL](sql/01_EMPTY_DATABASE_FULL.sql)，现已同步25张表；现有 `sqlite-test.db` 仍保留此前24表、空账号/空ledger，不再执行脚本。手工结构不填写假ledger，不直接作为应用目标；实际新应用库使用有序迁移器和受保护初始化。

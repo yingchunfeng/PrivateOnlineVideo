@@ -34,9 +34,14 @@ assert.equal(createHash("sha256").update(await readFile(sample)).digest("hex"), 
 report.checks.sample = { bytes: 460063, sha256: expectedHash };
 const setup = JSON.parse(await readFile(resolve(".local/account-setup.json"), "utf8"));
 const db = new Database(resolve(".local/data/video-library.db"), { readonly: true, fileMustExist: true });
+const authColumns = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+if (authColumns.some(column => column.name === "auth_method")) {
+  const authentication = db.prepare("SELECT auth_method FROM users WHERE singleton=1").get() as { auth_method: string } | undefined;
+  if (authentication?.auth_method !== "totp") { db.close(); throw new Error("此历史真实 OSS 脚本仅支持 TOTP 账号；邮箱账号请使用交互登录及新账号隔离验收，禁止使用旧 TOTP 替代。初始化资料不是当前密码来源。"); }
+}
 const user = db.prepare("SELECT id,password_hash,totp_cipher,last_totp_counter FROM users WHERE singleton=1").get() as any;
 db.close();
-assert.ok(await verifyPassword(user.password_hash, setup.password), "Existing account password must match; never reinitialize");
+assert.ok(await verifyPassword(user.password_hash, setup.password), "初始化历史密码已与当前数据库不同，请改为当前凭据流程；不能重新初始化或覆盖账号");
 const secret = decryptSecret(user.totp_cipher, await readMasterKey(resolve(".local/secrets/auth.key")));
 if (Math.floor(Date.now() / 30000) <= user.last_totp_counter || Date.now() % 30000 > 26000) {
   await new Promise(done => setTimeout(done, 31000 - Date.now() % 30000));

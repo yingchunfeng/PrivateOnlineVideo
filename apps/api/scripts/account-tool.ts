@@ -38,22 +38,30 @@ export async function cryptoAction(action: string, input: Record<string, unknown
 }
 
 /** 只读原数据库，不启动 API、不消费验证码、不初始化或更新账号。 */
-export async function loginMaterial(showPassword: boolean, setupPath = resolve(WORKSPACE_ROOT, ".local/account-setup.json"), env = process.env, now = Date.now()) {
+export async function loginMaterial(showPassword: boolean, setupPath = resolve(WORKSPACE_ROOT, ".local/account-setup.json"), env = process.env, now = Date.now()): Promise<{
+  displayName: string; authMethod: "totp" | "email"; emailMasked: string | null; password?: string; passwordSource?: string; totp?: string; validSeconds?: number; alreadyUsed?: boolean; note: string
+}> {
   const databasePath = guardDatabasePath(env.DATABASE_PATH ?? DEFAULT_DATABASE_PATH);
   const keyFile = guardLocalFile(env.AUTH_KEY_FILE ?? DEFAULT_AUTH_KEY_PATH);
   const database = new Database(databasePath, { readonly: true, fileMustExist: true });
   try {
-    const user = database.prepare("SELECT display_name,password_hash,totp_cipher,last_totp_counter FROM users WHERE singleton=1").get() as
-      { display_name: string; password_hash: string; totp_cipher: string; last_totp_counter: number } | undefined;
+    const columns = new Set((database.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map(row => row.name));
+    const authentication = columns.has("auth_method") ? "auth_method,email,email_verified_at" : "'totp' AS auth_method,NULL AS email,NULL AS email_verified_at";
+    const user = database.prepare(`SELECT display_name,password_hash,totp_cipher,last_totp_counter,${authentication} FROM users WHERE singleton=1`).get() as
+      { display_name: string; password_hash: string; totp_cipher: string; last_totp_counter: number; auth_method: "totp" | "email"; email: string | null; email_verified_at: string | null } | undefined;
     if (!user) throw new InputError("没有找到原账号；此工具不会初始化账号");
-    const secret = decryptSecret(user.totp_cipher, await readMasterKey(keyFile));
     let password: string | undefined;
     if (showPassword) {
       const setup = await jsonFile(setupPath); password = text(setup.password, "password", 512);
       if (!await verifyPassword(user.password_hash, password)) throw new InputError("初始化文件中的密码已与当前账号不同，请使用当前密码；此工具不会重置密码");
     }
+    const base = { displayName: user.display_name, authMethod: user.auth_method,
+      emailMasked: user.email ? `${user.email.slice(0, 1)}***@${user.email.split("@")[1]}` : null,
+      ...(password === undefined ? {} : { password, passwordSource: "初始化历史资料；已经数据库当前哈希核对" }) };
+    if (user.auth_method === "email") return { ...base, note: "当前账号使用邮箱验证码登录。保留的旧 TOTP 仅供受保护恢复，不能用于普通登录；请在登录页输入当前密码并发送邮件验证码。" };
+    const secret = decryptSecret(user.totp_cipher, await readMasterKey(keyFile));
     const counter = Math.floor(now / 30000); const alreadyUsed = counter <= user.last_totp_counter;
-    return { displayName: user.display_name, ...(password === undefined ? {} : { password }), totp: totp(secret, user.display_name).generate({ timestamp: now }),
+    return { ...base, totp: totp(secret, user.display_name).generate({ timestamp: now }),
       validSeconds: Math.ceil((30000 - now % 30000) / 1000), alreadyUsed,
       note: alreadyUsed ? "当前验证码已用于登录，请在下一周期重新执行 code。" : "使用密码与此六位验证码登录；生成验证码本身不会消费它。" };
   } finally { database.close(); }
@@ -70,14 +78,14 @@ node --import tsx apps/api/scripts/account-tool.ts verify-password --input .loca
 node --import tsx apps/api/scripts/account-tool.ts encrypt-secret --input .local/secret-input.json
 node --import tsx apps/api/scripts/account-tool.ts decrypt-secret --input .local/cipher-input.json
 
-show：本地显示原密码及当前验证码。code：仅显示当前验证码。
+show：只读初始化历史密码并核对数据库，过时密码会拒绝显示。code：仅在当前 TOTP 模式生成登录验证码，邮箱模式显示说明。
 hash-password 输入：{"password":"你的密码"}
 verify-password 输入：{"password":"你的密码","hash":"Argon2id哈希"}
 encrypt-secret 输入：{"secret":"需要加密的文本"}
 decrypt-secret 输入：{"ciphertext":"v1.IV.TAG.DATA"}
 加密/解密默认读取 .local/secrets/auth.key，可用 --key-file 指定 .local 内的原密钥文件。
 密码哈希不能解密；相同密码的哈希不同，相同文本的密文也不同，通过校验/解密确认一致性。
-所有命令不写数据库、不改账号、不保存输出；show 的密码只在本机终端显示。`);
+所有命令不写数据库、不改账号、不保存输出；show 的历史密码仅在仍匹配数据库哈希时于本机终端显示；历史 JSON 不作为当前账号状态来源。`);
     return;
   }
   const options: Record<string, string> = {};

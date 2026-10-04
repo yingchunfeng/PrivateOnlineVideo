@@ -9,7 +9,7 @@ import { buildApp } from "../src/app.js";
 import { readConfig } from "../src/core/config.js";
 import { loadLibraryConfig, validateLibraryConfig } from "../src/core/library-config.js";
 import { createLibraryConfiguration, recoverLibraryConfiguration } from "../src/core/library-configuration.js";
-import { openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
+import { MIGRATIONS, openDatabase, WORKSPACE_ROOT } from "../src/db/database.js";
 import { createRepositories } from "../src/db/repositories.js";
 
 const at = "2026-10-03T14:00:00.000Z";
@@ -77,7 +77,7 @@ test("隔离配置CRUD：JSON/SQLite热更新、空分类顺序、稳定标签ID
 
 test("隔离HTTP配置成功立即联动library，旧管理接口同源；非法/冲突/删除默认分类不写盘", async () => {
   const f = fixture(); const config = { ...readConfig({ NODE_ENV: "test" }), library: f.config, libraryConfigPath: f.path };
-  const auth = { requireUser: async () => ({ user: { id: "owner", displayName: "隔离", totpEnabled: true }, loginSessionId: "isolated-login" }) };
+  const auth = { requireUser: async () => ({ user: { id: "owner", displayName: "隔离", totpEnabled: true, authMethod: "totp" as const, authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "isolated-login" }) };
   const app = await buildApp({ config, logger: false, backend: { config, auth, database: f.database } });
   try {
     const initial = (await app.inject({ method: "GET", url: "/api/library/configuration" })).json().data as LibraryConfiguration;
@@ -99,7 +99,7 @@ test("隔离HTTP配置成功立即联动library，旧管理接口同源；非法
 
 test("隔离独立分类与标签CRUD：新增即能选择，分类筛选、标签改名与删除立即生效", async () => {
   const f = fixture(); const config = { ...readConfig({ NODE_ENV: "test" }), library: f.config, libraryConfigPath: f.path };
-  const auth = { requireUser: async () => ({ user: { id: "owner", displayName: "隔离", totpEnabled: true }, loginSessionId: "isolated-login" }) };
+  const auth = { requireUser: async () => ({ user: { id: "owner", displayName: "隔离", totpEnabled: true, authMethod: "totp" as const, authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "isolated-login" }) };
   const app = await buildApp({ config, logger: false, backend: { config, auth, database: f.database } });
   try {
     const desired = editable(f.manager.view("owner")); desired.categories.push({ name: "学习", enabled: true, tagIds: [] }, { name: "已删除", enabled: false, tagIds: [] });
@@ -239,7 +239,7 @@ test("隔离任务创建幂等/分页/重开及停用后原快照完成，无新
     assert.equal(finished.video.originalObject.key, created.object.key); assert.deepEqual(finished.video.video.tagIds, created.task.tagIds);
     assert.equal((await f.repositories.catalog.list("owner", { q: "旅行" })).total, 1);
     f.database.close(); const reopened = openDatabase(f.databasePath);
-    try { const repos = createRepositories(reopened, () => new Date(at), loadLibraryConfig(f.path)); const original = await repos.uploads.findByClientRequestId!("owner", request.clientRequestId, request); assert.equal(original!.task.videoId, finished.video.video.id); assert.equal(original!.parts[0]!.checksum, "a".repeat(64)); assert.equal((reopened.client.prepare("SELECT count(*) n FROM schema_migrations").get() as { n: number }).n, 2); }
+    try { const repos = createRepositories(reopened, () => new Date(at), loadLibraryConfig(f.path)); const original = await repos.uploads.findByClientRequestId!("owner", request.clientRequestId, request); assert.equal(original!.task.videoId, finished.video.video.id); assert.equal(original!.parts[0]!.checksum, "a".repeat(64)); assert.equal((reopened.client.prepare("SELECT count(*) n FROM schema_migrations").get() as { n: number }).n, MIGRATIONS.length); }
     finally { reopened.close(); }
   } finally { if (f.database.client.open) f.database.close(); }
 });

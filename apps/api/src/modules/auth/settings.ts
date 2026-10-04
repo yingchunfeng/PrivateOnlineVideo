@@ -3,7 +3,8 @@ import type { Environment } from "../../core/config.js";
 import { ConfigurationError } from "../../core/config.js";
 import { DEFAULT_AUTH_KEY_PATH, DEFAULT_DATABASE_PATH, guardDatabasePath, guardLocalFile, WORKSPACE_ROOT } from "../../db/database.js";
 
-export interface AuthSettings { databasePath: string; keyFile: string; allowedOrigins: string[]; sessionTtlMs: number; failureWindowMs: number; maxFailures: number; secureCookie: boolean }
+export interface AuthSettings { databasePath: string; keyFile: string; allowedOrigins: string[]; sessionTtlMs: number; failureWindowMs: number; maxFailures: number; secureCookie: boolean;
+  emailCodeTtlMs: number; emailResendMs: number; emailMaxErrors: number; emailHourlyLimit: number; mailTimeoutMs: number; operationTtlMs: number }
 export function readAuthSettings(environment: Environment, env: Record<string, string | undefined> = process.env): AuthSettings {
   const positive = (name: string, fallback: number, max: number) => {
     const value = env[name] ?? String(fallback);
@@ -24,5 +25,8 @@ export function readAuthSettings(environment: Environment, env: Record<string, s
   }
   return { databasePath, keyFile, allowedOrigins, sessionTtlMs: positive("AUTH_SESSION_TTL_MS", 86_400_000, 7 * 86_400_000),
     failureWindowMs: positive("AUTH_FAILURE_WINDOW_MS", 900_000, 86_400_000), maxFailures: positive("AUTH_MAX_FAILURES", 5, 100),
-    secureCookie: environment === "production" || allowedOrigins.every(origin => origin.startsWith("https://")) };
+    secureCookie: environment === "production" || allowedOrigins.every(origin => origin.startsWith("https://")),
+    emailCodeTtlMs: positive("AUTH_EMAIL_CODE_TTL_MS", 300_000, 900_000), emailResendMs: positive("AUTH_EMAIL_RESEND_MS", 60_000, 300_000),
+    emailMaxErrors: positive("AUTH_EMAIL_MAX_ERRORS", 5, 10), emailHourlyLimit: positive("AUTH_EMAIL_HOURLY_LIMIT", 10, 100),
+    mailTimeoutMs: positive("AUTH_MAIL_TIMEOUT_MS", 15_000, 60_000), operationTtlMs: positive("AUTH_OPERATION_TTL_MS", 900_000, 1_800_000) };
 }

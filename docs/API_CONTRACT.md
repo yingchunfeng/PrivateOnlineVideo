@@ -1,5 +1,7 @@
 # 前后端与媒体模块契约 V0.5
 
+2026-10-04 邮箱类型补充：`GET /api/auth/login/options` 与已登录的 `/api/auth/security` 增加公开 `emailProviders: [{code,name,domain}]`，仅列启用的 QQ/163 类型，不返回 SMTP 凭证或服务地址。绑定/修改邮箱只接受完整支持域名，类型停用后发码与确认均拒绝；错误码 `EMAIL_PROVIDER_UNSUPPORTED` 为 400。多类型配置及控制见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
+
 第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；详见[第二阶段契约](STAGE2_API_CONTRACT.md)与[后端交接](STAGE2_BACKEND_HANDOFF.md)。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
 
 日期：2026-10-02
@@ -23,7 +25,7 @@
 
 | DTO | 核心字段 |
 | --- | --- |
-| CurrentUser | `id`, `displayName`, `totpEnabled` |
+| CurrentUser | `id`, `displayName`, `totpEnabled`, `authMethod`, `authVersion`, `emailMasked`, `emailVerified` |
 | Category | `id`, `name`, `sortOrder`, `isDefault`, `archivedAt` |
 | LibraryGroup / Tag | id/name/createdAt/updatedAt/archivedAt；分组另description/sortOrder |
 | VideoSummary | `id`, `title`, `categoryId`, `groupIds`, `tagIds`, `durationSeconds`, `sizeBytes`, `status`, `thumbnailUrl`, `createdAt` |
@@ -55,7 +57,7 @@
 | 方法 | 路由 | 用途 |
 | --- | --- | --- |
 | GET | `/api/health` | 不包含敏感配置的健康状态 |
-| POST | `/api/auth/login` | 密码和 TOTP 登录，设置会话 Cookie |
+| POST | `/api/auth/login` | 按数据库 authMethod 使用密码 + TOTP 或密码 + 邮箱挑战，设置会话 Cookie |
 | GET | `/api/auth/me` | 当前用户及必要的 CSRF 信息 |
 | POST | `/api/auth/logout` | 撤销当前登录会话 |
 | GET | `/api/auth/sessions` | 本人登录会话列表 |
@@ -64,6 +66,8 @@
 账号初始化、TOTP 绑定和恢复是受保护流程，具体命令/路由由 CORE-03 提交设计；不提供公开注册或匿名重置密码接口。
 
 CORE-03 已固定本地命令 `account:init` 和 `account:recover`：初次创建只允许新库，恢复要求当前密码加单次恢复码；密码/验证器配置不作为 CLI 参数、日志或公开接口输出，资料保存于 Git 排除的 .local。绑定 TOTP 的 SHA1/6位/30秒配置由初始化资料导入验证器，同一验证码只能登录一次。详细当前账号与登录方式见 [ACCOUNT](ACCOUNT.md)。
+
+2026-10-04 新增邮箱认证契约见 [数据库账号与邮箱认证](ACCOUNT_EMAIL_IMPLEMENTATION.md)。未登录发码只有 `/api/auth/login/code`，请求只含密码，服务端从数据库已验证邮箱取收件人。登录页方式由 `/api/auth/login/options` 提供，不含邮箱。登录和发码仅豁免登录态 CSRF，仍检查可信 Origin；绑定邮箱、密码和邮箱修改均要求 Cookie + CSRF。二次验证错误使用 400 独立错误码，会话失效为 401。`totpEnabled` 表示数据库中保留的 TOTP 配置状态，当前登录方式由 `authMethod` 决定。密码、验证码和挑战仅存前端内存，认证版本变化使旧会话、挑战和待操作失效。
 
 ### 3.2 分类、元数据与观看记录：子代理 1
 

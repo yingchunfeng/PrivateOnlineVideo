@@ -19,7 +19,7 @@ function fixture(path = ":memory:") {
   db.orm.insert(schema.users).values({ id: "owner", displayName: "隔离用户", passwordHash: "test-only", totpCipher: "test-only", createdAt: at }).run();
   db.orm.insert(schema.categories).values({ id: "default", ownerId: "owner", name: "未分类", nameKey: "未分类", isDefault: true, createdAt: at }).run();
   db.orm.insert(schema.loginSessions).values({ id: "login", ownerId: "owner", tokenHash: randomUUID(), createdAt: at, lastSeenAt: at, expiresAt: "2026-10-03T08:00:00.000Z" }).run();
-  const principal: AuthPrincipal = { user: { id: "owner", displayName: "隔离用户", totpEnabled: true }, loginSessionId: "login" };
+  const principal: AuthPrincipal = { user: { id: "owner", displayName: "隔离用户", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "login" };
   const repos = createRepositories(db, () => new Date(at));
   const video: VideoRecord = { ownerId: "owner", originalObject: { key: "library/old.mp4" }, playbackObject: { key: "library/old.mp4" }, thumbnailObject: null,
     video: { id: "video", title: "原视频", categoryId: "default", durationSeconds: 100, sizeBytes: 8, status: "ready", thumbnailUrl: null, createdAt: at,
@@ -37,10 +37,12 @@ test("0002有序升级保存v1记录、重复升级幂等，未知ledger/名称�
   db.prepare("INSERT INTO schema_migrations VALUES(1,?,?)").run(first.checksum, at);
   db.prepare("INSERT INTO users(id,display_name,password_hash,totp_cipher,created_at) VALUES('owner','本人','hash','cipher',?)").run(at);
   db.prepare("INSERT INTO categories(id,owner_id,name,is_default,created_at) VALUES('default','owner','未分类',1,?)").run(at);
-  const before = db.prepare("SELECT * FROM users").all();
+  const before = db.prepare("SELECT * FROM users").get() as Record<string, unknown>;
   migrateDatabase(db); migrateDatabase(db);
-  assert.deepEqual(db.prepare("SELECT * FROM users").all(), before);
-  assert.deepEqual(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all(), [{ version: 1 }, { version: 2 }]);
+  const after = db.prepare("SELECT * FROM users").get() as Record<string, unknown>;
+  for (const [key, value] of Object.entries(before)) assert.equal(after[key], value, key);
+  assert.equal(after.auth_method, "totp"); assert.equal(after.auth_version, 1); assert.equal(after.email, null); assert.equal(after.email_verified_at, null);
+  assert.deepEqual(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all(), migrationManifest().map(migration => ({ version: migration.version })));
   assert.equal((db.prepare("SELECT name_key FROM categories").get() as { name_key: string }).name_key, "未分类");
   db.prepare("UPDATE schema_migrations SET version=9 WHERE version=2").run(); assert.throws(() => migrateDatabase(db)); db.close();
 
@@ -55,15 +57,18 @@ test("0002有序升级保存v1记录、重复升级幂等，未知ledger/名称�
   assert.equal((collision.prepare("SELECT count(*) n FROM categories").get() as { n: number }).n, 2); collision.close();
 });
 
-test("SQL提案与0002相同；完整空库25表/列/外键与逐版本迁移一致", () => {
+test("历史 SQL 提案与0002及v2空库25表一致；后续表/列/外键与当前迁移一致", () => {
   const target = new Database(":memory:"); const empty = new Database(":memory:");
   try {
-    target.pragma("foreign_keys=ON"); migrateDatabase(target);
+    target.pragma("foreign_keys=ON"); target.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,checksum TEXT NOT NULL,applied_at TEXT NOT NULL)");
+    for (const migration of migrationManifest().slice(0, 2)) { target.exec(migration.sql); target.prepare("INSERT INTO schema_migrations VALUES(?,?,?)").run(migration.version, migration.checksum, at); }
     empty.exec(readFileSync(resolve(WORKSPACE_ROOT, "docs/sql/01_EMPTY_DATABASE_FULL.sql"), "utf8"));
     assert.deepEqual(comparable(target), comparable(empty));
     assert.equal(comparable(target).length, 25);
     const sql = readFileSync(resolve(WORKSPACE_ROOT, "docs/sql/STAGE2_PENDING.sql"), "utf8").replace(/\r\n/g, "\n");
     assert.equal(createHash("sha256").update(sql).digest("hex"), migrationManifest()[1]!.checksum);
+    migrateDatabase(target); for (const migration of migrationManifest().slice(2)) empty.exec(migration.sql);
+    assert.deepEqual(comparable(target), comparable(empty)); assert.equal(comparable(target).length, 32);
     assert.deepEqual(target.pragma("foreign_key_check"), []); assert.equal(target.pragma("integrity_check", { simple: true }), "ok");
     for (const table of Object.values(schema)) {
       const columns = target.pragma(`table_info(${getTableName(table)})`) as { name: string; type: string }[];

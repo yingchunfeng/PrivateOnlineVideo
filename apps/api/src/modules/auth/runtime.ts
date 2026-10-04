@@ -5,15 +5,16 @@ import { ConfigurationError } from "../../core/config.js";
 import type { AppConfig } from "../../core/config.js";
 import { readAuthSettings } from "./settings.js";
 import { decryptSecret, readMasterKey } from "./crypto.js";
-import { AuthService } from "./service.js";
+import { AuthService, accountReady } from "./service.js";
+import { loadMailSender } from "./mail.js";
 
 export async function loadRuntimeAuth(config: AppConfig) {
   const settings = readAuthSettings(config.environment); const key = await readMasterKey(settings.keyFile);
   const database = openDatabase(settings.databasePath);
   try {
     const user = database.orm.select().from(users).where(eq(users.singleton, 1)).get();
-    if (!user || !user.totpEnabled) throw new ConfigurationError("本人账户未完成初始化；请使用受保护的本地初始化命令");
+    if (!user || !accountReady(user)) throw new ConfigurationError("本人账户认证状态无效；请核查数据库或使用受保护的本地恢复命令");
     decryptSecret(user.totpCipher, key);
-    return { service: new AuthService(database, key, settings), database };
+    return { service: new AuthService(database, key, settings, () => new Date(), loadMailSender(database, key)), database };
   } catch (error) { database.close(); throw error; }
 }

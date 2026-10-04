@@ -8,6 +8,7 @@ import type { AppDatabase } from "./database.js";
 import * as s from "./schema.js";
 import { createLibraryPersistence, createCatalogPersistence } from "./library.js";
 import { publicUrlFor } from "../core/library-config.js";
+import { accountReady, currentUser } from "../modules/auth/service.js";
 
 function bytes(value: number, min = 0, max = Number.MAX_SAFE_INTEGER) {
   if (!Number.isSafeInteger(value) || value < min || value > max) throw new HttpError("VALIDATION_ERROR");
@@ -75,7 +76,8 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
   const requireLogin = (principal: AuthPrincipal, at: string) => {
     const login = db.select().from(s.loginSessions).where(and(eq(s.loginSessions.id, principal.loginSessionId),
       eq(s.loginSessions.ownerId, principal.user.id), isNull(s.loginSessions.revokedAt), gt(s.loginSessions.expiresAt, at))).get();
-    if (!login) throw new HttpError("SESSION_EXPIRED");
+    const user = db.select().from(s.users).where(eq(s.users.id, principal.user.id)).get();
+    if (!login || !user || !accountReady(user) || login.authVersion !== user.authVersion || principal.user.authVersion !== user.authVersion) throw new HttpError("SESSION_EXPIRED");
     return login;
   };
   const playbackRecord = (row: typeof s.playbackSessions.$inferSelect): PlaybackRecord => ({ ownerId: row.ownerId,
@@ -339,7 +341,7 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
         const session = db.select().from(s.playbackSessions).where(and(eq(s.playbackSessions.id, input.playbackSessionId), eq(s.playbackSessions.ownerId, input.ownerId), isNull(s.playbackSessions.closedAt), gt(s.playbackSessions.expiresAt, at))).get();
         if (!session || session.mode !== "proxy") throw new HttpError("FORBIDDEN");
         const user = db.select().from(s.users).where(eq(s.users.id, input.ownerId)).get()!;
-        requireLogin({ user: { id: user.id, displayName: user.displayName, totpEnabled: user.totpEnabled }, loginSessionId: session.loginSessionId }, at);
+        requireLogin({ user: currentUser(user), loginSessionId: session.loginSessionId }, at);
       }
       db.insert(s.usageCounters).values({ ownerId: input.ownerId, periodStart: input.period.start, periodEnd: input.period.end, timezone: input.period.timezone }).onConflictDoNothing().run();
       const where = and(eq(s.usageCounters.ownerId, input.ownerId), eq(s.usageCounters.periodStart, input.period.start));

@@ -4,12 +4,14 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(), singleton: integer("singleton").notNull().default(1).unique(),
   displayName: text("display_name").notNull(), passwordHash: text("password_hash").notNull(),
   totpCipher: text("totp_cipher").notNull(), totpEnabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(true),
-  lastTotpCounter: integer("last_totp_counter").notNull().default(-1), createdAt: text("created_at").notNull()
+  lastTotpCounter: integer("last_totp_counter").notNull().default(-1), createdAt: text("created_at").notNull(),
+  email: text("email"), emailVerifiedAt: text("email_verified_at"),
+  authMethod: text("auth_method", { enum: ["totp", "email"] }).notNull().default("totp"), authVersion: integer("auth_version").notNull().default(1)
 });
 export const loginSessions = sqliteTable("login_sessions", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id),
   tokenHash: text("token_hash").notNull().unique(), createdAt: text("created_at").notNull(),
-  lastSeenAt: text("last_seen_at").notNull(), expiresAt: text("expires_at").notNull(), revokedAt: text("revoked_at")
+  lastSeenAt: text("last_seen_at").notNull(), expiresAt: text("expires_at").notNull(), revokedAt: text("revoked_at"), authVersion: integer("auth_version").notNull().default(1)
 });
 export const categories = sqliteTable("categories", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id),
@@ -68,6 +70,53 @@ export const recoveryCodes = sqliteTable("recovery_codes", {
 });
 export const loginAttempts = sqliteTable("login_attempts", {
   key: text("key").primaryKey(), windowStart: integer("window_start").notNull(), failures: integer("failures").notNull()
+});
+
+export const smtpConfig = sqliteTable("smtp_config", {
+  id: integer("id").primaryKey(), host: text("host").notNull(), port: integer("port").notNull(),
+  secure: integer("secure", { mode: "boolean" }).notNull(), user: text("user").notNull(),
+  passwordCipher: text("password_cipher").notNull(), from: text("from").notNull(),
+  timeoutMs: integer("timeout_ms").notNull().default(15000), updatedAt: text("updated_at").notNull()
+});
+
+export const smtpProviderTypes = sqliteTable("smtp_provider_types", {
+  code: text("code", { enum: ["qq", "163"] }).primaryKey(), name: text("name").notNull(),
+  emailDomain: text("email_domain").notNull().unique(), smtpHost: text("smtp_host").notNull().unique(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true)
+});
+export const smtpProviderConfigs = sqliteTable("smtp_provider_configs", {
+  providerCode: text("provider_code", { enum: ["qq", "163"] }).primaryKey().references(() => smtpProviderTypes.code),
+  host: text("host").notNull(), port: integer("port").notNull(), secure: integer("secure", { mode: "boolean" }).notNull(),
+  user: text("user").notNull(), passwordCipher: text("password_cipher").notNull(), from: text("from").notNull(),
+  timeoutMs: integer("timeout_ms").notNull().default(15000), updatedAt: text("updated_at").notNull()
+});
+
+export const accountOperations = sqliteTable("account_operations", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id),
+  loginSessionId: text("login_session_id").notNull().references(() => loginSessions.id), authVersion: integer("auth_version").notNull(),
+  operationType: text("operation_type", { enum: ["bind_email", "change_password", "change_email"] }).notNull(), targetEmail: text("target_email").notNull(),
+  state: text("state", { enum: ["pending", "old_verified", "completed", "cancelled", "invalidated"] }).notNull().default("pending"),
+  createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(), oldVerifiedAt: text("old_verified_at"), invalidatedAt: text("invalidated_at")
+});
+export const emailChallenges = sqliteTable("email_challenges", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id),
+  purpose: text("purpose", { enum: ["login", "bind_email", "change_password", "change_email_old", "change_email_new"] }).notNull(),
+  targetEmail: text("target_email").notNull(), authVersion: integer("auth_version").notNull(),
+  operationId: text("operation_id").references(() => accountOperations.id), loginSessionId: text("login_session_id").references(() => loginSessions.id),
+  codeDigest: text("code_digest").notNull(), sendSequence: integer("send_sequence").notNull(),
+  createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(), resendAt: text("resend_at").notNull(),
+  errorCount: integer("error_count").notNull().default(0), sendState: text("send_state", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"),
+  usedAt: text("used_at"), invalidatedAt: text("invalidated_at")
+});
+/** 每次发送预留一行，用滑动一小时窗口统计；失败投递同样占用额度。 */
+export const emailSendLimits = sqliteTable("email_send_limits", {
+  challengeId: text("challenge_id").primaryKey().references(() => emailChallenges.id), ownerId: text("owner_id").notNull().references(() => users.id),
+  ipHash: text("ip_hash").notNull(), reservedAt: integer("reserved_at").notNull()
+});
+export const securityNotifications = sqliteTable("security_notifications", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id), targetEmail: text("target_email").notNull(),
+  purpose: text("purpose", { enum: ["password_changed", "email_changed"] }).notNull(),
+  state: text("state", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"), createdAt: text("created_at").notNull(), completedAt: text("completed_at")
 });
 
 export const libraryGroups = sqliteTable("library_groups", {

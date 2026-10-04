@@ -38,7 +38,7 @@ async function register(f: ReturnType<typeof fixture>) {
 test("HTTP编辑分类和标签立即改变筛选，视频/封面对象身份与观看位置保持，非法选择和跨账号请求不写入", async () => {
   const f = fixture(); let ownerId = "owner";
   const config = { ...readConfig({ NODE_ENV: "test" }), library: f.library };
-  const auth = { requireUser: async () => ({ user: { id: ownerId, displayName: "隔离账号", totpEnabled: true }, loginSessionId: "isolated-login" }) };
+  const auth = { requireUser: async () => ({ user: { id: ownerId, displayName: "隔离账号", totpEnabled: true, authMethod: "totp" as const, authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "isolated-login" }) };
   const app = await buildApp({ config, logger: false, backend: { config, auth, database: f.database, now: () => new Date(at) } });
   try {
     await register(f); await f.repositories.progress.save("owner", "video", 12);
