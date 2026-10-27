@@ -4,7 +4,7 @@
 编写日期：2026-09-30  
 状态：原始需求基线；实际开发进度见 TASKS.md，第二阶段需求见第 13 节（本轮仅规划）
 
-2026-10-02架构选择更新：按用户[OSS准备记录](task/OSS和框架调整相关.md)，第二阶段采用“服务端上传、STS/V4签名后OSS直连播放/下载”。本文A优先/B备选描述保留为历史基线；当前阶段以[STAGE2](task/STAGE2.md)和[架构评审](task/STAGE2_ARCHITECTURE_REVIEW.md)为准，HTTPS尚未配置、正式库仍待版本2升级，不表示直连已实现。
+2026-10-02架构选择更新：按用户[OSS准备记录](archive/task/OSS和框架调整相关.md)，第二阶段采用“服务端上传、STS/V4签名后OSS直连播放/下载”。本文A优先/B备选描述保留为历史基线；当前阶段以[STAGE2](archive/task/STAGE2.md)和[架构评审](archive/task/STAGE2_ARCHITECTURE_REVIEW.md)为准，HTTPS尚未配置、正式库仍待版本2升级，不表示直连已实现。
 
 ## 1. 产品目标与已确认决策
 
@@ -475,7 +475,7 @@ VS Code 推荐扩展为 ESLint、Prettier；Container Tools 和 Remote - SSH 在
 
 ## 11. 实施阶段
 
-三代理模块划分和具体开发任务见 [TASKS.md](task/TASKS.md)，接口初稿见 [docs/API_CONTRACT.md](API_CONTRACT.md)。各代理分别维护 `.ai/demand/` 下自己的任务板；当前任务仅完成规划，源码开发尚未启动。
+三代理模块划分和具体开发任务见 [TASKS.md](archive/task/TASKS.md)，接口初稿见 [docs/API_CONTRACT.md](API_CONTRACT.md)。各代理分别维护 `.ai/demand/` 下自己的任务板；当前任务仅完成规划，源码开发尚未启动。
 
 1. **配置核实与骨架**：确认部署环境和 OSS 访问范围，建立前后端、数据库和 Compose 骨架。
 2. **核心安全与播放**：完成单人登录、分类列表、A 方案流式播放、Range 和实际传输限制。
@@ -500,7 +500,7 @@ VS Code 推荐扩展为 ESLint、Prettier；Container Tools 和 Remote - SSH 在
 
 ## 13. 第二阶段补充需求（2026-10-02）
 
-用户明确要求将后续功能写入下一阶段任务，由三个子代理在新对话实施。本次仅形成任务/SQL/OSS材料，未启动开发、现有库迁移或真实云访问。入口 [STAGE2.md](task/STAGE2.md)，新任务板为 .ai/demand/stage2/ 下三个文件。
+用户明确要求将后续功能写入下一阶段任务，由三个子代理在新对话实施。本次仅形成任务/SQL/OSS材料，未启动开发、现有库迁移或真实云访问。入口 [STAGE2.md](archive/task/STAGE2.md)，新任务板为 .ai/demand/stage2/ 下三个文件。
 
 原LIB-07中的“标签”在第二阶段升级为P0，并新增个人多分组；多级分类、更复杂排序等未因此全部提前实施。保持一个主分类+多个分组/合集+多个内容标签，未分类默认分类保留，组织信息归属于本人。
 

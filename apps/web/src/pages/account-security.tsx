@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { findEmailProvider } from "@online-video/shared";
 import type { AccountMutationResult, AccountSecuritySummary, EmailChallenge, EmailChangeAuthorization, EmailProviderType } from "@online-video/shared";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
@@ -36,7 +36,19 @@ export function AccountSecurity() {
     auth.revoked();
     navigate("/login", { replace: true, state: { notice } });
   };
-  return <div className="account-security stack section-space">{summary.busy ? <Loading /> : summary.error ? <ErrorNotice error={summary.error} retry={summary.reload} /> : summary.data && <><section className="panel stack" aria-label="账号安全摘要"><div className="page-head"><h2>账号安全摘要</h2><button className="secondary" onClick={summary.reload}>刷新安全信息</button></div><dl className="metadata"><div><dt>当前登录方式</dt><dd>{summary.data.authMethod === "email" ? "密码 + 邮箱验证码" : "密码 + TOTP"}</dd></div><div><dt>绑定邮箱</dt><dd>{summary.data.email ?? "尚未绑定"}<small>{summary.data.emailVerified ? `已验证${summary.data.emailVerifiedAt ? ` · ${date(summary.data.emailVerifiedAt)}` : ""}` : summary.data.email ? "待重新验证" : "绑定成功后切换为邮箱验证码登录"}</small></dd></div><div><dt>TOTP 配置</dt><dd>{summary.data.authMethod === "totp" && summary.data.totpAvailable ? "用于当前登录" : summary.data.totpAvailable ? "已保留，供受保护恢复使用" : "未配置"}</dd></div></dl></section>{summary.data.authMethod === "totp" ? <BindEmailForm summary={summary.data} complete={complete} /> : <div className="account-form-grid"><PasswordForm complete={complete} /><ChangeEmailForm summary={summary.data} complete={complete} /></div>}</>}</div>;
+  return <div className="account-security stack section-space">{summary.busy ? <Loading /> : summary.error ? <ErrorNotice error={summary.error} retry={summary.reload} /> : summary.data && <><section className="panel stack" aria-label="账号安全摘要"><div className="page-head"><h2>账号安全摘要</h2><button className="secondary" onClick={summary.reload}>刷新安全信息</button></div><dl className="metadata"><div><dt>当前登录方式</dt><dd>{summary.data.authMethod === "email" ? "密码 + 邮箱验证码" : summary.data.authMethod === "password" ? "密码登录" : "密码 + TOTP"}</dd></div><div><dt>绑定邮箱</dt><dd>{summary.data.email ?? "尚未绑定"}<small>{summary.data.emailVerified ? `已验证${summary.data.emailVerifiedAt ? ` · ${date(summary.data.emailVerifiedAt)}` : ""}` : summary.data.email ? "待重新验证" : "绑定成功后切换为邮箱验证码登录"}</small></dd></div><div><dt>TOTP 配置</dt><dd>{summary.data.authMethod === "totp" && summary.data.totpAvailable ? "用于当前登录" : summary.data.totpAvailable ? "已保留，供受保护恢复使用" : "未配置"}</dd></div></dl></section>{summary.data.authMethod === "password" ? <><PasswordOnlyForm complete={complete} /><Link className="text-link" to="/settings">配置邮件和登录邮箱验证</Link></> : summary.data.authMethod === "totp" ? <BindEmailForm summary={summary.data} complete={complete} /> : <div className="account-form-grid"><PasswordForm complete={complete} /><ChangeEmailForm summary={summary.data} complete={complete} /></div>}</>}</div>;
+}
+
+function PasswordOnlyForm({ complete }: { complete: CompleteChange }) {
+  const [currentPassword, setPassword] = useState(""); const [newPassword, setNew] = useState(""); const [confirmPassword, setConfirm] = useState("");
+  const task = useAccountTask();
+  return <section className="panel stack account-form" aria-label="修改密码"><h2>修改密码</h2><p className="muted">当前未开启邮箱验证。修改密码需验证当前密码，成功后撤销全部登录会话。</p><form className="stack" onSubmit={event => {
+    event.preventDefault(); void task.run(async () => {
+      if (newPassword !== confirmPassword) throw new ApiError("PASSWORD_POLICY_FAILED", "两次输入的新密码必须一致");
+      const result = await accountApi.passwordDirect({ currentPassword, newPassword, confirmPassword });
+      setPassword(""); setNew(""); setConfirm(""); complete(result, "密码修改成功。");
+    });
+  }}><label>当前密码<input type="password" autoComplete="current-password" required maxLength={512} value={currentPassword} onChange={event => setPassword(event.target.value)} disabled={task.busy} /></label><label>新密码<input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={event => setNew(event.target.value)} disabled={task.busy} /><small>12～128 个字符，不能与当前密码相同。</small></label><label>确认新密码<input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmPassword} onChange={event => setConfirm(event.target.value)} disabled={task.busy} /></label>{task.error !== undefined && <ErrorNotice error={task.error} />}<button disabled={task.busy || !currentPassword || !newPassword || !confirmPassword}>确认修改密码</button></form></section>;
 }
 
 function BindEmailForm({ summary, complete }: { summary: AccountSecuritySummary; complete: CompleteChange }) {

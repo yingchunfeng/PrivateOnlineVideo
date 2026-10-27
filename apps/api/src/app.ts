@@ -11,6 +11,10 @@ import { registerAuthModule } from "./modules/auth/routes.js";
 import { registerBackendModule } from "./modules/catalog/routes.js";
 import type { BackendDependencies } from "./modules/catalog/routes.js";
 import { registerProgressModule } from "./modules/progress/routes.js";
+import { SetupService } from "./modules/setup/service.js";
+import { registerSetupModule } from "./modules/setup/routes.js";
+import { registerInstallationSettingsModule } from "./modules/installation-settings/routes.js";
+import type { InstallationSettingsService } from "./modules/installation-settings/service.js";
 
 export interface BuildAppOptions {
   config?: AppConfig;
@@ -20,10 +24,14 @@ export interface BuildAppOptions {
   auth?: AuthService;
   backend?: BackendDependencies;
   onClose?: () => void | Promise<void>;
+  setup?: SetupService;
+  installationSettings?: InstallationSettingsService;
+  validateInstallation?: () => Promise<void>;
 }
 /** 只构建应用，不监听端口；后续业务模块由此统一装配。 */
 export async function buildApp(options: BuildAppOptions = {}) {
   const config = options.config ?? readConfig();
+  if (config.installationMode && (!(options.setup instanceof SetupService) || options.setup.auth !== options.auth || options.setup.database !== options.backend?.database || !options.installationSettings)) throw new ConfigurationError("首次安装入口必须装配同一数据库的真实安装状态、鉴权及配置服务");
   if (config.environment === "production" && (!options.auth || !options.backend || !options.media || options.media.dependencies.auth !== options.auth || options.backend.auth !== options.auth)) throw new ConfigurationError("生产必须装配真实鉴权、SQL和媒体模块");
   if (config.environment === "production" && (!(options.auth instanceof AuthService) || options.auth.database !== options.backend!.database || !options.auth.settings.secureCookie || options.auth.settings.allowedOrigins.some(origin => !origin.startsWith("https://")))) throw new ConfigurationError("生产必须使用同一SQLite的真实AuthService、安全Cookie和HTTPS Origin");
   if (options.backend && (options.backend.config !== config || (options.auth && options.backend.auth !== options.auth))) throw new ConfigurationError("后端模块必须复用应用配置及真实AuthGuard");
@@ -45,6 +53,10 @@ export async function buildApp(options: BuildAppOptions = {}) {
   registerErrorHandlers(app);
   if (options.onClose) app.addHook("onClose", async () => { await options.onClose!(); });
   app.addHook("onRequest", async (_request, reply) => { reply.header("cache-control", "no-store"); });
+  if (options.setup) app.addHook("onRequest", async request => {
+    const route = request.routeOptions.url ?? "";
+    if (route !== "/api/health" && !route.startsWith("/api/setup/") && !route.startsWith("/api/installation/")) options.setup!.assertBusinessReady();
+  });
   app.addHook("onResponse", async (request, reply) => {
     request.log.info({ method: request.method, route: request.routeOptions.url ?? "unmatched",
       statusCode: reply.statusCode, responseTimeMs: reply.elapsedTime }, "request completed");
@@ -57,6 +69,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
     } } }
   }, async () => ({ data: { status: "ok" } }));
   if (options.auth) registerAuthModule(app, options.auth);
+  if (options.setup) registerSetupModule(app, options.setup, { validateConfiguration: options.validateInstallation });
+  if (options.setup && options.installationSettings) registerInstallationSettingsModule(app, options.installationSettings,
+    (request, mutation) => options.setup!.requireConfigurationAccess(request, mutation));
   if (options.backend) { await registerBackendModule(app, options.backend); registerProgressModule(app, options.backend); }
   if (options.media) {
     try { await options.media.register(app, options.media.dependencies); }

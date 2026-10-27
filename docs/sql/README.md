@@ -1,12 +1,18 @@
 # SQLite 完整建表与已有库升级说明
 
+## 当前新部署入口（2026-10-26）
+
+**新空库只执行 [NEW_INSTALL_FULL.sql](NEW_INSTALL_FULL.sql) 这一份即可。** 已合并 0001～0006 的最终结构，包含 37 张表、正确迁移账本与邮箱类型种子，不包含账号或密钥。导入后按[新部署指南](../NEW_INSTALL.md)启动首次安装向导，使用默认密码和本机一次性安装码设置新账号。
+
+不得在现有数据库执行全量 SQL，不需要再执行旧 SQL 或 `account:init`。导出一致性及重复导入拒绝有自动化测试；生成器 `npm run db:export-full -w @online-video/api` 默认仅输出 SQL，`--output` 仅创建不存在的新文件。旧 v5 继续通过原入口运行，不自动迁移。下文为历史结构/迁移记录，并非新部署操作步骤。
+
 2026-10-04 多邮箱更新：最新迁移链追加 [0005-smtp-providers.sql](../../apps/api/src/db/migrations/0005-smtp-providers.sql)，结构为 v5/32 表，新增支持类型和多账号配置表，保留旧 SMTP 表。授权码只通过 [本地配置命令](../SMTP_PROVIDERS.md) 加密写入，不能放进 SQL。
 
 2026-10-04 SMTP 更新：最新应用结构为 0001 → 0002 → 0003 → [0004-smtp-config.sql](../../apps/api/src/db/migrations/0004-smtp-config.sql)，共 30 张表；0004 只追加 SMTP 表。历史空库脚本仍为 v2，不用于重建正式库。授权码不得写进 SQL，使用 [SMTP 配置命令](../SMTP.md) 加密保存。
 
 2026-10-04 账号邮箱认证新增源码版本 3；[0003-account-email.sql](../../apps/api/src/db/migrations/0003-account-email.sql) 为单独追加迁移。下文和 `01_EMPTY_DATABASE_FULL.sql` 保留第二阶段 v2 的历史结构说明，最新应用结构应通过 0001 → 0002 → 0003 迁移获得；不把手工空 ledger 当成正式库，不对既有正式库执行完整建表脚本。本轮不升级正式库，授权与一致性备份方案见 [账号邮箱实现记录](../ACCOUNT_EMAIL_IMPLEMENTATION.md)。
 
-**2026-10-02最新：用户授权正式目标备份升级后，主控已执行0002，正式 `.local/data/video-library.db` 为25表/版本2/users=1，旧13表旧列SHA和计数保留，integrityok/fk0。** `sqlite-test.db` 仍24表/users=0/ledger为空，不再建表或升级。实际备份及验证报告见[后端交接](../STAGE2_BACKEND_HANDOFF.md)。
+**2026-10-02最新：用户授权正式目标备份升级后，主控已执行0002，正式 `.local/data/video-library.db` 为25表/版本2/users=1，旧13表旧列SHA和计数保留，integrityok/fk0。** `sqlite-test.db` 仍24表/users=0/ledger为空，不再建表或升级。实际备份及验证报告见[后端交接](../archive/STAGE2_BACKEND_HANDOFF.md)。
 
 [01_EMPTY_DATABASE_FULL.sql](01_EMPTY_DATABASE_FULL.sql)只用于另一个新空库或阅读结构：从users开始建24表，每行中文注释；以下Navicat步骤保留为新空库操作说明，不用于重建现有库。
 
@@ -89,6 +95,6 @@ PRAGMA table_info(categories); -- 查看分类表字段及archived_at是否已�
 3. 已实现有序版本清单、已执行SHA核验和未知/跳号/超前拒绝；SQL、名称规范化、ledger与一致性检查同事务完成，冲突回滚。
 4. 在隔离内存库/新测试库验证升级、完整性、复合外键、重启、名称唯一性、对象版本绑定和软解绑，并证明旧账号/会话/视频记录保留。正式库的额外唯一索引若发现现有数据不一致，停止并报告，不自动清理。
 5. 已提供正式目标/SQL/一致性备份/副本验证，用户具体授权后主控通过db:migrate执行新增0002（不盲贴STAGE2文本）。实际备份 `.local/backups/before-migration-1790950813946-71816f51-c74c-4667-a682-782f49db3d0d.db` 及同名verification报告证明v2、旧列SHA保留、fk0/integrityok。
-6. 旧videos的key不删除；Bucket/版本未确认保持legacy，真实OSS拒绝读取，不默认指向配置的新Bucket。完整交接及实际已验/待验见[后端交接](../STAGE2_BACKEND_HANDOFF.md)。
+6. 旧videos的key不删除；Bucket/版本未确认保持legacy，真实OSS拒绝读取，不默认指向配置的新Bucket。完整交接及实际已验/待验见[后端交接](../archive/STAGE2_BACKEND_HANDOFF.md)。
 
 SQL不写事务边界或ledger插入，由迁移器统一immediate事务执行DDL/校验记录。正式库已按授权执行新增0002；该事实不授权手工库重建、GUI盲贴、后续迁移或云权限变更。

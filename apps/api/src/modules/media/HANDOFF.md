@@ -135,7 +135,7 @@ OSS创建应用会话后发源，达到3个时在签名之前拒第4个；同会
 
 真实执行清单与受控CLI在[OSS_ACCEPTANCE](OSS_ACCEPTANCE.md)、`acceptance/run.ts`：具体授权/版本2备份声明/指定SHA-256 1 byte～16MiB样例/独立验收前缀/固定本机与HTTPS媒体目标全部校验，六项授权门包括`newObjectPrivateAcl:true`。当前无既有私有视频可用，支持`verifyUploadedObjectPrivate:true`模式：只上传本轮新唯一private对象→完成/原片签名→检查Origin/授权run前缀→匿名1字节Range拒绝且有效签名206→再下载/播放；失败即停止保留记录/对象。它与既有`privateVideoId`模式互斥，后者可在上传前另验已有私有对象；新上传对象在两模式下都验匿名拒绝。默认dry-run不读取会话/样例或联网，只有`--execute`才可能调用本机真实API。原片和兼容副本分别一份清单、各最多一次，具体计划限2个新视频对象+最多1字节读取用途Put拒绝探针。脚本不改Bucket/已有对象ACL/Policy/版本控制、不执行迁移、不删除清理；新对象private头也必须获本轮具体授权才在实云执行。结果仍需真实STS/OSS、浏览器/CORS/撤销/重启/IAM实效补验。
 
-P2-MEDIA-05具体范围在[本轮计划](../../../../../docs/STAGE2_CLOUD_ACCEPTANCE_PLAN.md)，用户已明确授权，授权清单位于`.local/acceptance/run-20261002-ces-private/authorization.json`：同run目录至多2个原片/兼容UUID对象private、有限公网/费用、本人正式库2视频+1组2标签与最多1字节读取用途Put拒绝探针。既有Bucket公共读/原公开样例保留，无策略扩权/删除清理。网站证书/安卓/杭州内网/部署归第三阶段。
+P2-MEDIA-05具体范围在[本轮计划](../../../../../docs/archive/STAGE2_CLOUD_ACCEPTANCE_PLAN.md)，用户已明确授权，授权清单位于`.local/acceptance/run-20261002-ces-private/authorization.json`：同run目录至多2个原片/兼容UUID对象private、有限公网/费用、本人正式库2视频+1组2标签与最多1字节读取用途Put拒绝探针。既有Bucket公共读/原公开样例保留，无策略扩权/删除清理。网站证书/安卓/杭州内网/部署归第三阶段。
 
 ### 本轮真实STS/OSS权限和对象结果（16:51:44 UTC）
 

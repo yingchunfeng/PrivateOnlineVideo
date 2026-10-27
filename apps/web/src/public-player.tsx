@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { VideoDetail, WatchProgress } from "@online-video/shared";
 import { api } from "./api";
 import { publicMediaUrl } from "./library-data";
+import type { PublicMediaPolicy } from "./library-data";
 import { duration, ErrorNotice } from "./ui";
 
-export function PublicVideoPlayer({ video }: { video: VideoDetail }) {
+export function PublicVideoPlayer({ video, library }: { video: VideoDetail; library: PublicMediaPolicy }) {
   const element = useRef<HTMLVideoElement>(null); const alive = useRef(true); const applied = useRef(false); const lastSaved = useRef(0);
   const saving = useRef<Promise<unknown>>(Promise.resolve());
   const [status, setStatus] = useState("点击播放器开始播放"); const [position, setPosition] = useState(video.lastPositionSeconds); const [restored, setRestored] = useState(false);
@@ -24,9 +25,9 @@ export function PublicVideoPlayer({ video }: { video: VideoDetail }) {
   }, [video.id]);
   if (!video.publicUrl) return <div className="notice sci-notice">此记录尚无可用公共地址，请核对已登记的对象路径。</div>;
   let source: string;
-  try { source = publicMediaUrl(video.publicUrl); } catch (err) { return <ErrorNotice error={err} />; }
+  try { source = publicMediaUrl(video.publicUrl, library); } catch (err) { return <ErrorNotice error={err} />; }
   let poster: string | undefined;
-  try { if (video.coverUrl) poster = publicMediaUrl(video.coverUrl); } catch { /* 封面无效不阻止公共视频播放。 */ }
+  try { if (video.coverUrl) poster = publicMediaUrl(video.coverUrl, library); } catch { /* 封面无效不阻止公共视频播放。 */ }
   return <section className="player-section section-space" aria-label="视频播放器"><div className="player-frame" style={{ aspectRatio: video.width && video.height ? `${video.width} / ${video.height}` : "16 / 9" }}><video ref={element} src={source} poster={poster} controls playsInline preload="metadata" aria-label={video.title} onLoadedMetadata={() => {
     const node = element.current; if (!node || applied.current) return;
     const total = Number.isFinite(node.duration) ? node.duration : video.durationSeconds;

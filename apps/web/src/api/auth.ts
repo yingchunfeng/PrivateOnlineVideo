@@ -3,7 +3,7 @@ import { isEmailProviderList } from "@online-video/shared";
 import { ApiClient, ApiError } from "./client";
 
 export function validateAuthSession(value: AuthSession): AuthSession {
-  if (!value || typeof value.csrfToken !== "string" || !value.csrfToken || !value.user || typeof value.user.id !== "string" || !value.user.id || typeof value.user.displayName !== "string" || typeof value.user.totpEnabled !== "boolean" || !["totp", "email"].includes(value.user.authMethod) || !Number.isSafeInteger(value.user.authVersion) || value.user.authVersion < 1 || !(value.user.emailMasked === null || typeof value.user.emailMasked === "string") || typeof value.user.emailVerified !== "boolean" || value.user.authMethod === "email" && (!value.user.emailVerified || !value.user.emailMasked)) throw new ApiError("INVALID_RESPONSE", "登录会话信息不完整，请重新尝试");
+  if (!value || typeof value.csrfToken !== "string" || !value.csrfToken || !value.user || typeof value.user.id !== "string" || !value.user.id || typeof value.user.displayName !== "string" || typeof value.user.totpEnabled !== "boolean" || !["password", "totp", "email"].includes(value.user.authMethod) || !Number.isSafeInteger(value.user.authVersion) || value.user.authVersion < 1 || !(value.user.emailMasked === null || typeof value.user.emailMasked === "string") || typeof value.user.emailVerified !== "boolean" || value.user.authMethod === "email" && (!value.user.emailVerified || !value.user.emailMasked)) throw new ApiError("INVALID_RESPONSE", "登录会话信息不完整，请重新尝试");
   return value;
 }
 export function validateEmailChallenge(value: EmailChallenge): EmailChallenge {
@@ -17,7 +17,7 @@ function validateMutation(value: AccountMutationResult): AccountMutationResult {
 export const authApi = (client: ApiClient) => ({
   options: async (signal?: AbortSignal) => {
     const value = await client.request<LoginOptions>("/api/auth/login/options", signal ? { signal } : {});
-    if (!value || !["totp", "email"].includes(value.authMethod) || !Number.isFinite(Date.parse(value.serverTime))) throw new ApiError("INVALID_RESPONSE", "登录方式无法确认，请重新加载");
+    if (!value || !["password", "totp", "email"].includes(value.authMethod) || !Number.isFinite(Date.parse(value.serverTime))) throw new ApiError("INVALID_RESPONSE", "登录方式无法确认，请重新加载");
     if (!isEmailProviderList(value.emailProviders)) throw new ApiError("INVALID_RESPONSE", "支持的邮箱类型无法确认，请重新加载");
     return value;
   },
@@ -29,7 +29,7 @@ export const authApi = (client: ApiClient) => ({
   revoke: (id: string) => client.request<{ success: true }>(`/api/auth/sessions/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
   security: async () => {
     const value = await client.request<AccountSecuritySummary>("/api/auth/security");
-    if (!value || !["totp", "email"].includes(value.authMethod) || !Number.isSafeInteger(value.authVersion) || value.authVersion < 1 || !(value.email === null || typeof value.email === "string") || typeof value.emailVerified !== "boolean" || typeof value.totpAvailable !== "boolean" || !Number.isFinite(Date.parse(value.serverTime)) || value.authMethod === "email" && (!value.email || !value.emailVerified)) throw new ApiError("INVALID_RESPONSE", "账号安全信息不完整，请重新加载");
+    if (!value || !["password", "totp", "email"].includes(value.authMethod) || !Number.isSafeInteger(value.authVersion) || value.authVersion < 1 || !(value.email === null || typeof value.email === "string") || typeof value.emailVerified !== "boolean" || typeof value.totpAvailable !== "boolean" || !Number.isFinite(Date.parse(value.serverTime)) || value.authMethod === "email" && (!value.email || !value.emailVerified)) throw new ApiError("INVALID_RESPONSE", "账号安全信息不完整，请重新加载");
     if (!isEmailProviderList(value.emailProviders)) throw new ApiError("INVALID_RESPONSE", "支持的邮箱类型无法确认，请重新加载");
     return value;
   },
@@ -37,6 +37,9 @@ export const authApi = (client: ApiClient) => ({
   bindConfirm: async (body: BindEmailConfirmRequest) => validateMutation(await client.request<AccountMutationResult>("/api/auth/email/bind/confirm", { method: "POST", body })),
   passwordCode: async (body: PasswordCodeRequest) => validateEmailChallenge(await client.request<EmailChallenge>("/api/auth/password/code", { method: "POST", body })),
   passwordConfirm: async (body: ChangePasswordRequest) => validateMutation(await client.request<AccountMutationResult>("/api/auth/password/confirm", { method: "POST", body })),
+  passwordDirect: async (body: { currentPassword: string; newPassword: string; confirmPassword: string }) => validateMutation(await client.request<AccountMutationResult>("/api/auth/password/direct", { method: "POST", body })),
+  emailVerificationCode: async (body: { currentPassword: string; enabled: boolean; email?: string }) => validateEmailChallenge(await client.request<EmailChallenge>("/api/auth/email-verification/code", { method: "POST", body })),
+  emailVerificationConfirm: async (body: { currentPassword: string; enabled: boolean; email?: string; challengeId: string; code: string }) => validateMutation(await client.request<AccountMutationResult>("/api/auth/email-verification/confirm", { method: "POST", body })),
   emailOldCode: async (body: ChangeEmailRequest) => validateEmailChallenge(await client.request<EmailChallenge>("/api/auth/email/change/old/code", { method: "POST", body })),
   emailVerifyOld: (body: VerifyOldEmailRequest) => client.request<EmailChangeAuthorization>("/api/auth/email/change/old/verify", { method: "POST", body }),
   emailNewCode: async (body: AccountOperationRequest) => validateEmailChallenge(await client.request<EmailChallenge>("/api/auth/email/change/new/code", { method: "POST", body })),

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { resolve } from "node:path";
 import type { LibraryConfig } from "@online-video/shared";
 import { MAX_ORGANIZATION_LINKS } from "@online-video/shared";
@@ -9,13 +10,29 @@ const unavailableConfigurations = new WeakSet<LibraryConfig>();
 export function markLibraryUnavailable(config: LibraryConfig) { unavailableConfigurations.add(config); }
 export function assertLibraryAvailable(config: LibraryConfig) { if (unavailableConfigurations.has(config)) throw new HttpError("CONFIG_RECOVERY_REQUIRED"); }
 
+/** 网页配置只允许 HTTPS 媒体 Origin；不会由服务端抓取用户填写的任意地址。 */
+export function validateLibraryAddress(mediaBaseUrl: unknown, objectPrefix: unknown): { mediaBaseUrl: string; objectPrefix: string } {
+  try {
+    if (typeof mediaBaseUrl !== "string" || mediaBaseUrl.length > 2048 || mediaBaseUrl !== mediaBaseUrl.trim() ||
+      typeof objectPrefix !== "string" || !objectPrefix || objectPrefix.length > 256 || !objectPrefix.endsWith("/") || objectPrefix.startsWith("/") ||
+      /[\\%?#*\x00-\x20\x7f]/.test(objectPrefix) || objectPrefix.includes("//") || objectPrefix.split("/").some(part => part === "." || part === "..")) throw new Error();
+    const url = new URL(mediaBaseUrl);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.port || url.pathname !== "/" ||
+      mediaBaseUrl !== url.origin || isIP(url.hostname) || !url.hostname.includes(".") || !/^[a-z0-9.-]+$/.test(url.hostname) ||
+      url.hostname.split(".").some(label => !label || label.startsWith("-") || label.endsWith("-")) ||
+      /(?:^|\.)(?:localhost|local|internal)$/.test(url.hostname)) throw new Error();
+    return { mediaBaseUrl: url.origin, objectPrefix };
+  } catch { throw new ConfigurationError("媒体地址须为合法的 HTTPS 域名，存储前缀须为无歧义的相对目录并以 / 结尾"); }
+}
+
 export function validateLibraryConfig(value: unknown): LibraryConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ConfigurationError("视频库配置必须是JSON对象");
   const input = value as Record<string, unknown>;
   if (Object.keys(input).some(key => !["mediaBaseUrl", "objectPrefix", "categories", "tagDefinitions"].includes(key)) ||
-    input.mediaBaseUrl !== "https://oss.meetdawn.top" || input.objectPrefix !== "onlineVideo/" || !Array.isArray(input.categories)) {
-    throw new ConfigurationError("视频库配置须使用固定媒体域名、onlineVideo/前缀及categories数组");
+    !Array.isArray(input.categories)) {
+    throw new ConfigurationError("视频库配置须包含媒体域名、存储前缀及 categories 数组");
   }
+  const address = validateLibraryAddress(input.mediaBaseUrl, input.objectPrefix);
   const definitions = input.tagDefinitions === undefined ? undefined : (() => {
     if (!Array.isArray(input.tagDefinitions)) throw new ConfigurationError("标签定义必须为数组");
     const ids = new Set<string>(); const names = new Set<string>();
@@ -47,7 +64,7 @@ export function validateLibraryConfig(value: unknown): LibraryConfig {
     ids.add(item.id);
     return { id: item.id, name: item.name, tags: [...item.tags] as string[], ...(item.tagIds === undefined ? {} : { tagIds: [...item.tagIds] as string[] }), ...(item.enabled === undefined ? {} : { enabled: item.enabled }) };
   });
-  return { mediaBaseUrl: input.mediaBaseUrl, objectPrefix: input.objectPrefix, categories, ...(definitions === undefined ? {} : { tagDefinitions: definitions }) };
+  return { ...address, categories, ...(definitions === undefined ? {} : { tagDefinitions: definitions }) };
 }
 
 export function loadLibraryConfig(path = resolve(WORKSPACE_ROOT, "config/library.json")): LibraryConfig {

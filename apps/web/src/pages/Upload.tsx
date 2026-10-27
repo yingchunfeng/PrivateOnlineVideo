@@ -300,7 +300,7 @@ export function LegacyUploadPage() {
               <strong>{mockEnabled ? "模拟服务端已确认登记" : "服务端已确认登记"}</strong>
               <p>视频已保存，可交给浏览器直接尝试播放。</p>
               <Link className="button" to={`/videos/${encodeURIComponent(task.videoId)}`}>播放视频</Link>
-              {completedVideo && <PublicAddress publicUrl={completedVideo.publicUrl} />}
+              {completedVideo && <PublicAddress publicUrl={completedVideo.publicUrl} library={organizations.data} />}
             </div>
           )}
           {task?.status === "finalizing" && <div className="notice">等待服务端完成校验；请刷新任务确认结果，勿重复创建。</div>}

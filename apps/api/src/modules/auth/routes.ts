@@ -25,10 +25,12 @@ export function registerAuthModule(app: FastifyInstance, service: AuthService): 
     scope.post<{ Body: LoginCodeRequest }>("/api/auth/login/code", { bodyLimit: 8192, schema: { body: body({ password }) } },
       async request => ({ data: await service.requestLoginCode(request, request.body) }));
     scope.post<{ Body: LoginRequest }>("/api/auth/login", { bodyLimit: 8192, schema: { body: {
-      ...body({ password, totp: code, authMethod: { type: "string", enum: ["totp", "email"] }, challengeId: id, code }, ["password"]),
+      ...body({ password, totp: code, authMethod: { type: "string", enum: ["totp", "email", "password"] }, challengeId: id, code }, ["password"]),
       if: { properties: { authMethod: { const: "email" } }, required: ["authMethod"] },
       then: { required: ["authMethod", "challengeId", "code"], not: { required: ["totp"] } },
-      else: { required: ["totp"], not: { anyOf: [{ required: ["challengeId"] }, { required: ["code"] }] } }
+      else: { if: { properties: { authMethod: { const: "password" } }, required: ["authMethod"] },
+        then: { not: { anyOf: [{ required: ["totp"] }, { required: ["challengeId"] }, { required: ["code"] }] } },
+        else: { required: ["totp"], not: { anyOf: [{ required: ["challengeId"] }, { required: ["code"] }] } } }
     } } }, async (request, reply) => {
       const result = await service.login(request, request.body);
       reply.setCookie(service.cookieName, result.token, { ...cookieOptions, expires: new Date(result.expiresAt), maxAge: Math.floor(service.settings.sessionTtlMs / 1000) });
@@ -36,6 +38,15 @@ export function registerAuthModule(app: FastifyInstance, service: AuthService): 
     });
     scope.get("/api/auth/me", async request => ({ data: await service.me(request) }));
     scope.get("/api/auth/security", async request => ({ data: await service.security(request) }));
+    scope.post<{ Body: { currentPassword: string; newPassword: string; confirmPassword: string } }>("/api/auth/password/direct",
+      { bodyLimit: 8192, schema: { body: body({ currentPassword: password, newPassword: password, confirmPassword: password }) } },
+      async (request, reply) => { const data = await service.directPasswordChange(request, request.body); reply.clearCookie(service.cookieName, cookieOptions); return { data }; });
+    scope.post<{ Body: { currentPassword: string; enabled: boolean; email?: string } }>("/api/auth/email-verification/code",
+      { bodyLimit: 8192, schema: { body: body({ currentPassword: password, enabled: { type: "boolean" }, email }, ["currentPassword", "enabled"]) } },
+      async request => ({ data: await service.emailVerificationCode(request, request.body) }));
+    scope.post<{ Body: { currentPassword: string; enabled: boolean; email?: string; challengeId: string; code: string } }>("/api/auth/email-verification/confirm",
+      { bodyLimit: 8192, schema: { body: body({ currentPassword: password, enabled: { type: "boolean" }, email, challengeId: id, code }, ["currentPassword", "enabled", "challengeId", "code"]) } },
+      async (request, reply) => { const data = await service.emailVerificationConfirm(request, request.body); reply.clearCookie(service.cookieName, cookieOptions); return { data }; });
     scope.post<{ Body: BindEmailRequest }>("/api/auth/email/bind/code", { bodyLimit: 8192, schema: { body: body({ currentPassword: password, totp: code, email }) } },
       async request => ({ data: await service.bindEmailRequest(request, request.body) }));
     scope.post<{ Body: BindEmailConfirmRequest }>("/api/auth/email/bind/confirm", { bodyLimit: 8192, schema: { body: body({ currentPassword: password, totp: code, ...operation }) } },

@@ -13,22 +13,29 @@ import type { AuthSettings } from "./settings.js";
 import { enabledEmailProviders, requireSupportedEmailProvider, UnconfiguredMailSender } from "./mail.js";
 import type { MailSender, MailMessage } from "./mail.js";
 import { csrfToken, decryptSecret, encryptSecret, equalToken, hashPassword, newRecoveryCodes, randomToken, tokenHash, totp, verifyPassword } from "./crypto.js";
+import { authenticationUser, hasOnboardingSchema, saveLoginMode } from "./login-mode.js";
+import type { AuthenticationUser } from "./login-mode.js";
 
-type User = typeof s.users.$inferSelect;
+type User = AuthenticationUser;
 type Operation = typeof s.accountOperations.$inferSelect;
 type Challenge = typeof s.emailChallenges.$inferSelect;
+interface VerificationChallengeRow { id: string; owner_id: string; login_session_id: string; auth_version: number; enabled: number;
+  target_email: string; code_digest: string; ip_hash: string; created_at: string; expires_at: string; resend_at: string;
+  error_count: number; send_state: "pending" | "sent" | "failed"; used_at: string | null; invalidated_at: string | null; sequence: number }
 export const maskEmail = (email: string) => { const [name, domain] = email.split("@"); return `${name!.slice(0, 1)}***@${domain}`; };
-export function accountReady(user: User): boolean { return user.authMethod === "totp" ? user.totpEnabled : !!(user.email && user.emailVerifiedAt); }
+export function accountReady(user: User): boolean { return user.authMethod === "password" || (user.authMethod === "totp" ? user.totpEnabled : !!(user.email && user.emailVerifiedAt)); }
 export function currentUser(user: User): CurrentUser { return { id: user.id, displayName: user.displayName, totpEnabled: user.totpEnabled,
   authMethod: user.authMethod, authVersion: user.authVersion, emailMasked: user.email ? maskEmail(user.email) : null, emailVerified: !!user.emailVerifiedAt }; }
 
 export class AuthService implements AuthGuard {
   private hashing = 0;
   readonly cookieName: string;
+  mailConfigurationTested?: (email: string) => boolean;
   constructor(readonly database: AppDatabase, readonly key: Buffer, readonly settings: AuthSettings, readonly now: () => Date = () => new Date(), readonly mailSender: MailSender = new UnconfiguredMailSender()) {
     if (key.length !== 32) throw new Error("invalid auth key");
     this.cookieName = settings.secureCookie ? "__Host-ov_session" : "ov_session";
   }
+  setMailConfigurationCheck(check: (email: string) => boolean): void { this.mailConfigurationTested = check; }
   private audit(action: string, ownerId?: string) { this.database.orm.insert(s.auditEvents).values({ id: randomUUID(), ownerId: ownerId ?? null, action, createdAt: this.now().toISOString() }).run(); }
   assertOrigin(request: FastifyRequest): void {
     if (typeof request.headers.origin !== "string" || !this.settings.allowedOrigins.includes(request.headers.origin) || request.headers["sec-fetch-site"] === "cross-site") throw new HttpError("CSRF_REJECTED");
@@ -47,6 +54,7 @@ export class AuthService implements AuthGuard {
     return keys;
   }
   async login(request: FastifyRequest, input: LoginRequest): Promise<{ token: string; data: AuthSession; expiresAt: string }> {
+    this.assertBusinessReady();
     this.assertOrigin(request);
     if (this.hashing >= 2) throw new HttpError("RATE_LIMITED");
     const keys = this.attempt(request.ip); this.hashing++;
@@ -57,7 +65,7 @@ export class AuthService implements AuthGuard {
       if (user.authMethod !== (input.authMethod ?? "totp")) throw new HttpError("AUTH_METHOD_MISMATCH");
       if (input.authMethod === "email") this.requireEmail(user);
       const validatedAt = this.now().getTime();
-      const delta = input.authMethod === "email" ? null : this.totpDelta(user, input.totp);
+      const delta = input.authMethod === "email" || input.authMethod === "password" ? null : this.totpDelta(user, input.totp);
       if (!accountReady(user) || (user.authMethod === "totp" && delta === null)) { this.audit("login_failed", user.id); throw new HttpError("INVALID_CREDENTIALS"); }
       const counter = Math.floor(validatedAt / 30_000) + (delta ?? 0);
       const token = randomToken(); const at = this.now().toISOString(); const expiresAt = new Date(this.now().getTime() + this.settings.sessionTtlMs).toISOString();
@@ -66,7 +74,7 @@ export class AuthService implements AuthGuard {
         if (input.authMethod === "email") {
           const error = this.consume(input.challengeId, input.code, user, "login", user.email!, null, null);
           if (error) return { error };
-        } else {
+        } else if (user.authMethod === "totp") {
           // 同一 TOTP 在并发登录/重启后仍只能使用一次。
           const changed = this.database.orm.update(s.users).set({ lastTotpCounter: counter }).where(and(eq(s.users.id, user.id),
             eq(s.users.authMethod, "totp"), eq(s.users.totpEnabled, true), sql`${s.users.lastTotpCounter} < ${counter}`)).run();
@@ -86,11 +94,13 @@ export class AuthService implements AuthGuard {
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError("AUTH_REQUIRED");
     const row = this.database.orm.select().from(s.loginSessions).where(eq(s.loginSessions.tokenHash, tokenHash(token))).get();
     if (!row || row.revokedAt || row.expiresAt <= this.now().toISOString()) throw new HttpError("SESSION_EXPIRED");
-    const user = this.database.orm.select().from(s.users).where(eq(s.users.id, row.ownerId)).get();
+    const stored = this.database.orm.select().from(s.users).where(eq(s.users.id, row.ownerId)).get();
+    const user = stored ? authenticationUser(this.database, stored) : undefined;
     if (!user || !accountReady(user) || row.authVersion !== user.authVersion) throw new HttpError("SESSION_EXPIRED");
     return { row, user, token };
   }
   async requireUser(request: FastifyRequest, options: { mutation: boolean }): Promise<AuthPrincipal> {
+    this.assertBusinessReady();
     const { row, user, token } = this.session(request);
     if (options.mutation) { this.assertOrigin(request); if (!equalToken(request.headers["x-csrf-token"], csrfToken(token, this.key))) throw new HttpError("CSRF_REJECTED"); }
     this.database.orm.update(s.loginSessions).set({ lastSeenAt: this.now().toISOString() }).where(eq(s.loginSessions.id, row.id)).run();
@@ -100,7 +110,12 @@ export class AuthService implements AuthGuard {
   private mainAccount(): User {
     const user = this.database.orm.select().from(s.users).where(eq(s.users.singleton, 1)).get();
     if (!user) throw new HttpError("SERVICE_NOT_CONFIGURED");
-    return user;
+    return authenticationUser(this.database, user);
+  }
+  private assertBusinessReady(): void {
+    if (!hasOnboardingSchema(this.database)) return;
+    const state = this.database.client.prepare("SELECT stage FROM installation_state WHERE id=1").get() as { stage: string } | undefined;
+    if (state && state.stage !== "ready") throw new HttpError("SETUP_REQUIRED");
   }
   private snapshot(expected: User, requireReady = true): User {
     const user = this.mainAccount();
@@ -156,7 +171,7 @@ export class AuthService implements AuthGuard {
       timer = setTimeout(() => reject(new HttpError("MAIL_SEND_FAILED")), this.settings.mailTimeoutMs);
     })]); } finally { if (timer) clearTimeout(timer); }
   }
-  private async challenge(request: FastifyRequest, user: User, purpose: EmailChallengePurpose, targetEmail: string, sessionId: string | null,
+  private async challenge(request: FastifyRequest, user: User, purpose: Challenge["purpose"], targetEmail: string, sessionId: string | null,
     operationInput: { type: Operation["operationType"]; targetEmail: string } | { operation: Operation } | null): Promise<EmailChallenge> {
     requireSupportedEmailProvider(this.database, targetEmail);
     const code = randomInt(0, 1_000_000).toString().padStart(6, "0"); const id = randomUUID();
@@ -214,7 +229,7 @@ export class AuthService implements AuthGuard {
     return { challengeId: id, operationId: reserved.operationId, maskedEmail: maskEmail(targetEmail), serverTime: this.now().toISOString(), expiresAt: reserved.expiresAt, resendAt: reserved.resendAt };
   }
   /** 调用者在事务结束后抛出错误，确保错误次数不会随着异常回滚。 */
-  private consume(id: string, code: string, user: User, purpose: EmailChallengePurpose, targetEmail: string, sessionId: string | null, operationId: string | null): ErrorCode | null {
+  private consume(id: string, code: string, user: User, purpose: Challenge["purpose"], targetEmail: string, sessionId: string | null, operationId: string | null): ErrorCode | null {
     const challenge = this.database.orm.select().from(s.emailChallenges).where(eq(s.emailChallenges.id, id)).get();
     if (!challenge || challenge.ownerId !== user.id || challenge.purpose !== purpose || challenge.targetEmail !== targetEmail ||
       challenge.authVersion !== user.authVersion || challenge.loginSessionId !== sessionId || challenge.operationId !== operationId) return "EMAIL_CHALLENGE_EXPIRED";
@@ -250,6 +265,7 @@ export class AuthService implements AuthGuard {
     this.database.orm.update(s.accountOperations).set({ state: "invalidated", invalidatedAt: at }).where(and(eq(s.accountOperations.ownerId, user.id),
       sql`${s.accountOperations.state} IN ('pending','old_verified')`)).run();
     if (operationId) this.database.orm.update(s.accountOperations).set({ state: "completed", invalidatedAt: null }).where(eq(s.accountOperations.id, operationId)).run();
+    if (hasOnboardingSchema(this.database)) this.database.client.prepare("UPDATE email_verification_challenges SET invalidated_at=? WHERE owner_id=? AND invalidated_at IS NULL").run(at, user.id);
   }
   async bindEmailConfirm(request: FastifyRequest, input: BindEmailConfirmRequest): Promise<AccountMutationResult> {
     const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
@@ -263,6 +279,7 @@ export class AuthService implements AuthGuard {
       requireSupportedEmailProvider(this.database, op.targetEmail);
       const error = this.consume(input.challengeId, input.code, user, "bind_email", op.targetEmail, principal.loginSessionId, op.id); if (error) return error;
       this.database.orm.update(s.users).set({ email: op.targetEmail, emailVerifiedAt: this.now().toISOString(), authMethod: "email", authVersion: user.authVersion + 1 }).where(eq(s.users.id, user.id)).run();
+      saveLoginMode(this.database, user.id, "email", this.now().toISOString());
       this.invalidateAccount(user, op.id); this.audit("email_bound", user.id); return null;
     }).immediate();
     if (error) throw new HttpError(error);
@@ -303,6 +320,95 @@ export class AuthService implements AuthGuard {
     }).immediate();
     if (outcome.error) throw new HttpError(outcome.error);
     return { success: true, reloginRequired: true, notificationStatus: await this.notify(outcome.notificationId!, email, "password_changed") };
+  }
+  async directPasswordChange(request: FastifyRequest, input: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<AccountMutationResult> {
+    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    if (user.authMethod !== "password") throw new HttpError("AUTH_METHOD_MISMATCH");
+    await this.password(user, input.currentPassword, request);
+    if (input.newPassword.length < 12 || input.newPassword.length > 128 || input.newPassword !== input.confirmPassword) throw new HttpError("PASSWORD_POLICY_FAILED");
+    if (input.newPassword === input.currentPassword) throw new HttpError("PASSWORD_UNCHANGED");
+    const passwordHash = await hashPassword(input.newPassword);
+    this.database.client.transaction(() => {
+      this.snapshot(user); this.liveSession(principal.loginSessionId, user);
+      this.database.orm.update(s.users).set({ passwordHash, authVersion: user.authVersion + 1 }).where(eq(s.users.id, user.id)).run();
+      this.invalidateAccount(user); this.audit("password_changed", user.id);
+    }).immediate();
+    return { success: true, reloginRequired: true, notificationStatus: "not_required" };
+  }
+  private verificationTarget(user: User, input: { enabled: boolean; email?: string }): string {
+    if (!hasOnboardingSchema(this.database)) throw new HttpError("SERVICE_NOT_CONFIGURED");
+    if (input.enabled) {
+      if (user.authMethod !== "password" || !input.email) throw new HttpError("AUTH_METHOD_MISMATCH");
+      const email = this.emailAddress(input.email);
+      if (!this.mailConfigurationTested?.(email)) throw new HttpError("MAIL_TEST_REQUIRED");
+      return email;
+    }
+    if (user.authMethod !== "email" || (input.email !== undefined && input.email !== user.email)) throw new HttpError("AUTH_METHOD_MISMATCH");
+    return this.requireEmail(user);
+  }
+  private verificationDigest(row: Pick<VerificationChallengeRow, "id" | "owner_id" | "login_session_id" | "auth_version" | "enabled" | "target_email">, code: string): string {
+    return createHmac("sha256", this.key).update(JSON.stringify(["video-library:email-verification:v1", row.id, row.owner_id,
+      row.login_session_id, row.auth_version, row.enabled, row.target_email, code])).digest("hex");
+  }
+  async emailVerificationCode(request: FastifyRequest, input: { currentPassword: string; enabled: boolean; email?: string }): Promise<EmailChallenge> {
+    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    await this.password(user, input.currentPassword, request);
+    const targetEmail = this.verificationTarget(user, input); const code = randomInt(0, 1_000_000).toString().padStart(6, "0"); const id = randomUUID();
+    const row = this.database.client.transaction(() => {
+      this.snapshot(user); this.liveSession(principal.loginSessionId, user); this.verificationTarget(user, input);
+      const at = this.now(); const atIso = at.toISOString();
+      const latest = this.database.client.prepare("SELECT resend_at FROM email_verification_challenges WHERE owner_id=? ORDER BY rowid DESC LIMIT 1").get(user.id) as { resend_at: string } | undefined;
+      if (latest && latest.resend_at > atIso) throw new HttpError("EMAIL_SEND_COOLDOWN");
+      const since = new Date(at.getTime() - 3_600_000).toISOString(); const ipHash = tokenHash(request.ip);
+      const count = (column: "owner_id" | "ip_hash", value: string) => (this.database.client.prepare(`SELECT count(*) n FROM email_verification_challenges WHERE ${column}=? AND created_at>=?`).get(value, since) as { n: number }).n;
+      if (count("owner_id", user.id) >= this.settings.emailHourlyLimit || count("ip_hash", ipHash) >= this.settings.emailHourlyLimit) throw new HttpError("RATE_LIMITED");
+      const value = { id, owner_id: user.id, login_session_id: principal.loginSessionId, auth_version: user.authVersion, enabled: input.enabled ? 1 : 0, target_email: targetEmail };
+      this.database.client.prepare("INSERT INTO email_verification_challenges(id,owner_id,login_session_id,auth_version,enabled,target_email,code_digest,ip_hash,created_at,expires_at,resend_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+        .run(id, user.id, principal.loginSessionId, user.authVersion, value.enabled, targetEmail, this.verificationDigest(value, code), ipHash, atIso,
+          new Date(at.getTime() + this.settings.emailCodeTtlMs).toISOString(), new Date(at.getTime() + this.settings.emailResendMs).toISOString());
+      return this.database.client.prepare("SELECT rowid sequence,* FROM email_verification_challenges WHERE id=?").get(id) as VerificationChallengeRow;
+    }).immediate();
+    try { await this.deliver({ kind: "verification", to: targetEmail, purpose: "email_verification", challengeId: id, code, expiresAt: row.expires_at }); }
+    catch (error) {
+      this.database.client.prepare("UPDATE email_verification_challenges SET send_state='failed' WHERE id=?").run(id);
+      throw new HttpError(error instanceof HttpError && error.code === "MAIL_NOT_CONFIGURED" ? "MAIL_NOT_CONFIGURED" : "MAIL_SEND_FAILED");
+    }
+    const sent = this.database.client.transaction(() => {
+      const current = this.database.client.prepare("SELECT rowid sequence,* FROM email_verification_challenges WHERE id=?").get(id) as VerificationChallengeRow;
+      let valid = current.send_state === "pending" && !current.invalidated_at && current.expires_at > this.now().toISOString();
+      try { this.snapshot(user); this.liveSession(principal.loginSessionId, user); this.verificationTarget(user, input); } catch { valid = false; }
+      if (this.database.client.prepare("SELECT 1 FROM email_verification_challenges WHERE owner_id=? AND rowid>?").get(user.id, row.sequence)) valid = false;
+      if (!valid) { this.database.client.prepare("UPDATE email_verification_challenges SET invalidated_at=? WHERE id=?").run(this.now().toISOString(), id); return false; }
+      this.database.client.prepare("UPDATE email_verification_challenges SET send_state='sent' WHERE id=?").run(id);
+      this.database.client.prepare("UPDATE email_verification_challenges SET invalidated_at=? WHERE owner_id=? AND id<>? AND invalidated_at IS NULL AND send_state='sent'").run(this.now().toISOString(), user.id, id);
+      return true;
+    }).immediate();
+    if (!sent) throw new HttpError("ACCOUNT_VERSION_CONFLICT");
+    return { challengeId: id, operationId: null, maskedEmail: maskEmail(targetEmail), serverTime: this.now().toISOString(), expiresAt: row.expires_at, resendAt: row.resend_at };
+  }
+  async emailVerificationConfirm(request: FastifyRequest, input: { currentPassword: string; enabled: boolean; email?: string; challengeId: string; code: string }): Promise<AccountMutationResult> {
+    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    await this.password(user, input.currentPassword, request); const email = this.verificationTarget(user, input);
+    const error = this.database.client.transaction((): ErrorCode | null => {
+      this.snapshot(user); this.liveSession(principal.loginSessionId, user); this.verificationTarget(user, input);
+      const row = this.database.client.prepare("SELECT rowid sequence,* FROM email_verification_challenges WHERE id=?").get(input.challengeId) as VerificationChallengeRow | undefined;
+      if (!row || row.owner_id !== user.id || row.login_session_id !== principal.loginSessionId || row.auth_version !== user.authVersion || row.enabled !== Number(input.enabled) || row.target_email !== email) return "EMAIL_CHALLENGE_EXPIRED";
+      if (row.error_count >= this.settings.emailMaxErrors) return "EMAIL_CODE_ATTEMPTS_EXCEEDED";
+      const at = this.now().toISOString();
+      if (row.send_state !== "sent" || row.used_at || row.invalidated_at || row.expires_at <= at) return "EMAIL_CHALLENGE_EXPIRED";
+      if (!/^\d{6}$/.test(input.code) || !equalToken(this.verificationDigest(row, input.code), row.code_digest)) {
+        const count = row.error_count + 1;
+        this.database.client.prepare("UPDATE email_verification_challenges SET error_count=?,invalidated_at=? WHERE id=?").run(count, count >= this.settings.emailMaxErrors ? at : null, row.id);
+        return count >= this.settings.emailMaxErrors ? "EMAIL_CODE_ATTEMPTS_EXCEEDED" : "EMAIL_CODE_INVALID";
+      }
+      this.database.client.prepare("UPDATE email_verification_challenges SET used_at=? WHERE id=?").run(at, row.id);
+      this.database.orm.update(s.users).set({ email, emailVerifiedAt: user.email === email && user.emailVerifiedAt ? user.emailVerifiedAt : at,
+        ...(input.enabled ? { authMethod: "email" as const } : {}), authVersion: user.authVersion + 1 }).where(eq(s.users.id, user.id)).run();
+      saveLoginMode(this.database, user.id, input.enabled ? "email" : "password", at);
+      this.invalidateAccount(user); this.audit(input.enabled ? "email_verification_enabled" : "email_verification_disabled", user.id); return null;
+    }).immediate();
+    if (error) throw new HttpError(error);
+    return { success: true, reloginRequired: true, notificationStatus: "not_required" };
   }
   async emailChangeRequest(request: FastifyRequest, input: ChangeEmailRequest): Promise<EmailChallenge> {
     const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
@@ -370,7 +476,8 @@ export class AuthService implements AuthGuard {
   }
   async recover(password: string, code: string, persist?: (value: { displayName: string; totpSecret: string; otpauthUri: string; recoveryCodes: string[] }) => Promise<void>) {
     const keys = this.attempt("local-recovery");
-    const user = this.database.orm.select().from(s.users).where(eq(s.users.singleton, 1)).get();
+    const stored = this.database.orm.select().from(s.users).where(eq(s.users.singleton, 1)).get();
+    const user = stored ? authenticationUser(this.database, stored) : undefined;
     if (!user || !await verifyPassword(user.passwordHash, password)) throw new HttpError("AUTH_REQUIRED");
     const verifiedCode = this.database.orm.select().from(s.recoveryCodes).where(and(eq(s.recoveryCodes.ownerId, user.id), eq(s.recoveryCodes.codeHash, tokenHash(code)), isNull(s.recoveryCodes.usedAt))).get();
     if (!verifiedCode) throw new HttpError("AUTH_REQUIRED");
@@ -384,6 +491,7 @@ export class AuthService implements AuthGuard {
       if (consumed.changes !== 1) throw new HttpError("AUTH_REQUIRED");
       this.database.orm.update(s.users).set({ totpCipher: encryptSecret(factor.secret.base32, this.key), totpEnabled: true, lastTotpCounter: -1,
         authMethod: "totp", authVersion: user.authVersion + 1, emailVerifiedAt: null }).where(eq(s.users.id, user.id)).run();
+      saveLoginMode(this.database, user.id, "totp", this.now().toISOString());
       const at = this.now().toISOString();
       this.invalidateAccount(user);
       // 旧恢复码保留历史并全部失效，不删除记录。

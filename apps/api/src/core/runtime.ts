@@ -41,6 +41,7 @@ export async function runtimeModules(config: AppConfig, auth: AuthService, datab
     durationSeconds: oss.stsDurationSeconds, refreshBeforeSeconds: oss.stsRefreshBeforeSeconds }, now);
   const storage = await createOssStorageAdapter({ bucket: oss.bucket, region: oss.region, endpoint: oss.endpoint, objectPrefix: limits.objectPrefix,
     network: oss.network, allowPublicNetwork: oss.allowPublicNetwork }, credentials);
+  if (oss.region !== "cn-hangzhou") throw new ConfigurationError("旧私有播放模式仍仅支持原杭州配置；其他地域请使用新部署公共模式");
   const sources = await createOssPresignedSourceProvider({ bucket: oss.bucket, region: oss.region, endpoint: oss.playbackEndpoint, objectPrefix: limits.objectPrefix,
     ttlSeconds: oss.signedUrlTtlSeconds, safetySeconds: oss.clockSkewSeconds, renewBeforeSeconds: oss.stsRefreshBeforeSeconds }, credentials, now);
   return { backend: { database, auth, config, now }, media: { register, dependencies: { ...dependencies, storage, sources } } };

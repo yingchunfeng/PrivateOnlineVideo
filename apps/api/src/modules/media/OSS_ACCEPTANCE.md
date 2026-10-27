@@ -1,6 +1,6 @@
 # P2-MEDIA-05 本机实云验收范围与证据
 
-用户已于2026-10-02明确授权[本轮计划](../../../../../docs/STAGE2_CLOUD_ACCEPTANCE_PLAN.md)范围，授权记录为`.local/acceptance/run-20261002-ces-private/authorization.json`。真实STS、两样例站内上传/登记、对象私有/签名Range、读取用途Put拒绝/限定List、真实浏览器播放/兼容下载/自动续签/退出边界/实际进程重启持久化全链证据已验，P2-MEDIA-05于17:29 UTC完成。CORS核验限当前native video未设crossOrigin路径；额外fetch不可读记录保留，不宣称所有跨域、安卓/内网/部署成功。
+用户已于2026-10-02明确授权[本轮计划](../../../../../docs/archive/STAGE2_CLOUD_ACCEPTANCE_PLAN.md)范围，授权记录为`.local/acceptance/run-20261002-ces-private/authorization.json`。真实STS、两样例站内上传/登记、对象私有/签名Range、读取用途Put拒绝/限定List、真实浏览器播放/兼容下载/自动续签/退出边界/实际进程重启持久化全链证据已验，P2-MEDIA-05于17:29 UTC完成。CORS核验限当前native video未设crossOrigin路径；额外fetch不可读记录保留，不宣称所有跨域、安卓/内网/部署成功。
 
 Bucket ACL为公共读，主控已在授权的两个新唯一对象CompleteMultipartUpload中发送`x-oss-object-acl: private`和`x-oss-forbid-overwrite: true`。两对象匿名Range403、有效STS/V4 Range206证明本轮私有实效；没有调用PutBucketACL/PutObjectACL、修改原公开样例/已有对象或扩大STS会话Policy。官方依据保留：[CompleteMultipartUpload](https://help.aliyun.com/zh/oss/developer-reference/completemultipartupload)、[Object ACL](https://help.aliyun.com/zh/oss/user-guide/object-acl)。
 

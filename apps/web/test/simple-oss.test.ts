@@ -12,6 +12,6 @@ test("多标签搜索序列化支持逗号标签，不把名称拆成多个标�
   assert.deepEqual(parseTagFilter(JSON.stringify(tags)), tags); assert.deepEqual(parseTagFilter("invalid"), []);
 });
 test("公共媒体地址只接受固定媒体域名与无签名onlineVideo路径", () => {
-  const source = "https://oss.meetdawn.top/onlineVideo/old.mp4"; assert.equal(publicMediaUrl(source), source);
-  for (const invalid of ["https://evil.example/onlineVideo/v.mp4", "http://oss.meetdawn.top/onlineVideo/v.mp4", `${source}?Signature=old`, `${source}#old`, "https://oss.meetdawn.top/private/v.mp4", "https://user:password@oss.meetdawn.top/onlineVideo/v.mp4", "https://oss.meetdawn.top/onlineVideo/%5cprivate.mp4"]) assert.throws(() => publicMediaUrl(invalid));
+  const source = "https://oss.meetdawn.top/onlineVideo/old.mp4"; assert.equal(publicMediaUrl(source, { mediaBaseUrl: "https://oss.meetdawn.top", objectPrefix: "onlineVideo/" }), source);
+  for (const invalid of ["https://evil.example/onlineVideo/v.mp4", "http://oss.meetdawn.top/onlineVideo/v.mp4", `${source}?Signature=old`, `${source}#old`, "https://oss.meetdawn.top/private/v.mp4", "https://user:password@oss.meetdawn.top/onlineVideo/v.mp4", "https://oss.meetdawn.top/onlineVideo/%5cprivate.mp4"]) assert.throws(() => publicMediaUrl(invalid, { mediaBaseUrl: "https://oss.meetdawn.top", objectPrefix: "onlineVideo/" }));
 });

@@ -72,6 +72,31 @@ export const loginAttempts = sqliteTable("login_attempts", {
   key: text("key").primaryKey(), windowStart: integer("window_start").notNull(), failures: integer("failures").notNull()
 });
 
+/** v6 显式登录方式；没有扩展行的旧账号仍读取 users.auth_method。 */
+export const accountLoginModes = sqliteTable("account_login_modes", {
+  ownerId: text("owner_id").primaryKey().references(() => users.id),
+  method: text("method", { enum: ["password", "totp", "email"] }).notNull(), updatedAt: text("updated_at").notNull()
+});
+export const installationState = sqliteTable("installation_state", {
+  id: integer("id").primaryKey(), stage: text("stage", { enum: ["password", "configuration", "ready"] }).notNull(),
+  installationCodeHash: text("installation_code_hash").notNull(), keyFingerprint: text("key_fingerprint").notNull(),
+  ownerId: text("owner_id").references(() => users.id), version: integer("version").notNull().default(1),
+  createdAt: text("created_at").notNull(), completedAt: text("completed_at")
+});
+export const installationSessions = sqliteTable("installation_sessions", {
+  id: text("id").primaryKey(), tokenHash: text("token_hash").notNull().unique(), installationVersion: integer("installation_version").notNull(),
+  createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(), revokedAt: text("revoked_at")
+});
+export const installationSettings = sqliteTable("installation_settings", {
+  id: integer("id").primaryKey(), payloadCipher: text("payload_cipher").notNull(), version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull()
+});
+export const emailVerificationChallenges = sqliteTable("email_verification_challenges", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id), loginSessionId: text("login_session_id").notNull().references(() => loginSessions.id),
+  authVersion: integer("auth_version").notNull(), enabled: integer("enabled", { mode: "boolean" }).notNull(), targetEmail: text("target_email").notNull(),
+  codeDigest: text("code_digest").notNull(), ipHash: text("ip_hash").notNull(), createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(), resendAt: text("resend_at").notNull(),
+  errorCount: integer("error_count").notNull().default(0), sendState: text("send_state", { enum: ["pending", "sent", "failed"] }).notNull().default("pending"), usedAt: text("used_at"), invalidatedAt: text("invalidated_at")
+});
+
 export const smtpConfig = sqliteTable("smtp_config", {
   id: integer("id").primaryKey(), host: text("host").notNull(), port: integer("port").notNull(),
   secure: integer("secure", { mode: "boolean" }).notNull(), user: text("user").notNull(),

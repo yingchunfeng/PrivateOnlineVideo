@@ -1,0 +1,4 @@
+{
+  "databasePath": ".local/data/new-install.db",
+  "authKeyFile": ".local/data/new-install.db.auth.key"
+}

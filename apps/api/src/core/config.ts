@@ -12,7 +12,7 @@ export interface MediaConfig {
   ffprobePath: string | null; probeTimeoutMs: number; probeMaxReadBytes: number; probeMaxConcurrent: number;
 }
 export interface OssConfig {
-  bucket: string; region: "cn-hangzhou"; endpoint: string; playbackEndpoint: string; network: "internal" | "public";
+  bucket: string; region: string; endpoint: string; playbackEndpoint: string; network: "internal" | "public";
   allowPublicNetwork: boolean; credentialFile: string; roleArn?: string; roleArnFile?: string;
   stsDurationSeconds: number; stsRefreshBeforeSeconds: number; signedUrlTtlSeconds: number; clockSkewSeconds: number;
 }
@@ -24,6 +24,8 @@ export interface AppConfig {
   readonly playbackMode: PlaybackMode;
   readonly storageDriver: StorageDriver;
   readonly libraryMode?: "public" | "legacy";
+  /** 显式新部署入口；必须与真实 SetupService 和受限业务门禁共同使用。 */
+  readonly installationMode?: boolean;
   library?: LibraryConfig;
   libraryConfigPath?: string;
   readonly usageTimezone: string;

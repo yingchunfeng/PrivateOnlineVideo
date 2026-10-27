@@ -2,10 +2,16 @@ import { MAX_ORGANIZATION_LINKS } from "@online-video/shared";
 import { useEffect, useState } from "react";
 import type { LibraryConfig } from "@online-video/shared";
 import { api } from "./api";
-import { defaultLibraryCategory, libraryTags } from "./library-data";
+import { defaultLibraryCategory, libraryTags, validatePublicMediaPolicy } from "./library-data";
+import { ApiError } from "./api/client";
 import { Empty, ErrorNotice, Loading, useLoad } from "./ui";
 
-export const loadLibrary = () => api.request<LibraryConfig>("/api/library");
+export const loadLibrary = async () => {
+  const value = await api.request<LibraryConfig>("/api/library");
+  validatePublicMediaPolicy(value);
+  if (!Array.isArray(value.categories)) throw new ApiError("INVALID_RESPONSE", "视频库分类配置无效");
+  return value;
+};
 const LIBRARY_CHANGE_CHANNEL = "online-video-library-configuration";
 const LIBRARY_CHANGE_STORAGE = "ov.library-configuration-revision";
 export function notifyLibraryChanged() {

@@ -60,7 +60,7 @@ export function VideoPage() {
       )}
 
       <div className="video-player-container">
-        <PublicVideoPlayer key={video.id} video={video} />
+        <PublicVideoPlayer key={video.id} video={video} library={detail.data} />
       </div>
 
       {/* 科技控制条：标题、标签与操作按钮（参考设计图第2幅） */}
@@ -78,7 +78,7 @@ export function VideoPage() {
           </div>
         </div>
         <div className="video-detail-right">
-          <PublicAddress publicUrl={video.publicUrl} />
+          <PublicAddress publicUrl={video.publicUrl} library={detail.data} />
         </div>
       </div>
 

@@ -1,5 +1,7 @@
 # WEB-01～07 前端交接
 
+> **历史产物整理（2026-10-26）**：用户已授权清理 `apps/web/qa/` 的旧截图、日志和报告，下文此目录的证据路径仅作历史记录，不再表示文件仍存在。测试源码及 `.local/acceptance/` 的资料保留；详见[清理记录](../../docs/archive/README.md)。
+
 第二阶段最新交付与待验见本文末尾。下列第一阶段记录保留为历史；不代表第二阶段直连已完成真实 OSS 验收。
 
 日期：2026-10-01。前端 P0 源码和本地自测已完成；`.ai/demand/03-frontend.md` 已逐卡回写。真实账户/Repository 与最终媒体装配尚需主控 CORE-02～06、INT-01～03 接入，真实安卓与 OSS 未验。
@@ -66,12 +68,12 @@ npm run test:production -w @online-video/web
 
 主控独立重复验证另存 `qa/2026-10-01T15-46-39-606Z/`，已视觉复核竖播放器、分类加载完毕的库与上传页及UTC周期。旧图保留。
 
-- [手机视频库](qa/2026-10-01T15-43-01-595Z/phone-library.png)
-- [长标题布局](qa/2026-10-01T15-43-01-595Z/phone-long-title.png)
-- [横屏播放器](qa/2026-10-01T15-43-01-595Z/landscape-player.png)
-- [竖视频播放器](qa/2026-10-01T15-43-01-595Z/phone-portrait-player.png)
-- [安全与UTC用量](qa/2026-10-01T15-43-01-595Z/phone-security.png)
-- [手机上传](qa/2026-10-01T15-43-01-595Z/phone-upload.png)
+- 手机视频库（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/phone-library.png`）
+- 长标题布局（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/phone-long-title.png`）
+- 横屏播放器（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/landscape-player.png`）
+- 竖视频播放器（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/phone-portrait-player.png`）
+- 安全与UTC用量（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/phone-security.png`）
+- 手机上传（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/2026-10-01T15-43-01-595Z/phone-upload.png`）
 
 ## 真实联调清单
 
@@ -117,13 +119,13 @@ npm run build:release -w @online-video/web
 
 本轮当前发布产物为 `dist/stage2-release-2026-10-02T15-40-47-545Z/`，清单：[manifest.json](dist/stage2-release-2026-10-02T15-40-47-545Z/manifest.json)。该目录只有当前 index/JS/CSS/清单，全目录无 Mock、长期凭据、数据库或 Node 模块引用。此前 14:21 的独立目录、普通 dist 历史文件与失败构建遗留全部保留，不能混入本次发布包。当前 JS 325.83kB/gzip102.94kB，CSS10.25kB/gzip2.90kB。未发布或部署。
 
-最新真 HTTP 截图目录 `qa/stage2-2026-10-02T14-20-00-951Z/`，日志：[本地完整链 TAP](qa/stage2-browser-final-2026-10-02T14-20.log)。截图已视觉检查，包含开发合成样例标识，均非真实云/安卓设备：
+最新真 HTTP 截图目录 `qa/stage2-2026-10-02T14-20-00-951Z/`，日志：本地完整链 TAP（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-browser-final-2026-10-02T14-20.log`）。截图已视觉检查，包含开发合成样例标识，均非真实云/安卓设备：
 
-- [真 HTTP 手机视频库](qa/stage2-2026-10-02T14-20-00-951Z/phone-library.png)
-- [签名直连播放器](qa/stage2-2026-10-02T14-20-00-951Z/phone-direct-player.png)
-- [OSS 未同步用量](qa/stage2-2026-10-02T14-20-00-951Z/phone-oss-usage.png)
-- [150%文字及长标签](qa/stage2-2026-10-02T14-20-00-951Z/phone-long-tags-150-percent.png)
-- [横屏组织筛选](qa/stage2-2026-10-02T14-20-00-951Z/landscape-organization-filter.png)
+- 真 HTTP 手机视频库（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-2026-10-02T14-20-00-951Z/phone-library.png`）
+- 签名直连播放器（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-2026-10-02T14-20-00-951Z/phone-direct-player.png`）
+- OSS 未同步用量（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-2026-10-02T14-20-00-951Z/phone-oss-usage.png`）
+- 150%文字及长标签（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-2026-10-02T14-20-00-951Z/phone-long-tags-150-percent.png`）
+- 横屏组织筛选（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-2026-10-02T14-20-00-951Z/landscape-organization-filter.png`）
 
 根 `.env` 两个公开字段 `VITE_MEDIA_ORIGIN/VITE_MEDIA_PREFIX` 与后端固定签名域名必须一致。前端仅接收限定对象的签名 URL，不接收完整 STS 密钥。生产不允许 HTTP 媒体源；仅本地协议测试在开发态显式 `VITE_ALLOW_LOCAL_MEDIA_HTTP=true` 允许回环 HTTP。video 未设置 crossOrigin，不把网站 Cookie 发送到 OSS，不做全量 fetch/blob 或 PWA 缓存。
 
@@ -150,11 +152,11 @@ npm run build:release -w @online-video/web
 
 证据目录与原始记录：
 
-- [修复前心跳复现](qa/stage2-long-2026-10-02T15-24-57-650Z/heartbeat-before-fix.json)
-- [修复后心跳/延迟响应/Range清单](qa/stage2-long-2026-10-02T15-35-09-922Z/foreground-heartbeat.json)
-- [完整长测试TAP](qa/stage2-long-final-2026-10-02.log)
-- [应用授权过期提示](qa/stage2-long-2026-10-02T15-35-09-922Z/long-application-session-expired.png)
-- [登录撤销后的恢复](qa/stage2-long-2026-10-02T15-35-09-922Z/long-login-revoked.png)
+- 修复前心跳复现（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-long-2026-10-02T15-24-57-650Z/heartbeat-before-fix.json`）
+- 修复后心跳/延迟响应/Range清单（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-long-2026-10-02T15-35-09-922Z/foreground-heartbeat.json`）
+- 完整长测试TAP（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-long-final-2026-10-02.log`）
+- 应用授权过期提示（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-long-2026-10-02T15-35-09-922Z/long-application-session-expired.png`）
+- 登录撤销后的恢复（历史产物已于 2026-10-26 按授权清理；原路径：`apps/web/qa/stage2-long-2026-10-02T15-35-09-922Z/long-login-revoked.png`）
 
 修复后再次通过 typecheck、14单元、短期真实全链7子场景/TAP8、proxy/Mock7/TAP8、production1及新独立发布全目录扫描。服务均已优雅退出；该时点P2-WEB-04维持DOING留实云条件补验，后续最终实云结果见下一节。
 

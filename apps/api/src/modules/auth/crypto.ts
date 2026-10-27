@@ -18,12 +18,12 @@ export async function readMasterKey(path: string): Promise<Buffer> {
   try { const key = await readFile(path); if (key.length !== 32) throw new Error("invalid key"); return key; }
   catch { throw new ConfigurationError("账号安全密钥不存在或长度不正确；请检查初始化资料，不会重新生成或降低验证要求"); }
 }
-export function encryptSecret(secret: string, key: Buffer, purpose: "totp" | "smtp" = "totp"): string {
+export function encryptSecret(secret: string, key: Buffer, purpose: "totp" | "smtp" | "installation" = "totp"): string {
   const iv = randomBytes(12); const cipher = createCipheriv("aes-256-gcm", key, iv); cipher.setAAD(Buffer.from(`video-library:${purpose}:v1`));
   const data = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
   return ["v1", iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), data.toString("base64url")].join(".");
 }
-export function decryptSecret(value: string, key: Buffer, purpose: "totp" | "smtp" = "totp"): string {
+export function decryptSecret(value: string, key: Buffer, purpose: "totp" | "smtp" | "installation" = "totp"): string {
   try {
     const [version, nonce, tag, encoded] = value.split("."); if (version !== "v1" || !nonce || !tag || !encoded) throw new Error("invalid ciphertext");
     const cipher = createDecipheriv("aes-256-gcm", key, Buffer.from(nonce, "base64url")); cipher.setAAD(Buffer.from(`video-library:${purpose}:v1`));

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { HttpError } from "../../../core/errors.js";
 import { checkAborted } from "./scope.js";
 import type { StsCredentialProvider } from "../../../core/contracts/index.js";
+import { storageDiagnostic } from "./diagnostics.js";
 
 export type OssCredentialPurpose = "upload" | "import" | "read";
 export interface TemporaryOssCredentials {
@@ -14,6 +15,7 @@ export interface AssumeRoleResult {
 export interface StsCacheOptions {
   roleArn: string; bucket: string; objectPrefix: string;
   durationSeconds: number; refreshBeforeSeconds: number;
+  diagnosticErrors?: boolean;
 }
 export type AssumeRole = (input: { roleArn: string; policy: string; durationSeconds: number;
   sessionName: string }) => Promise<AssumeRoleResult>;
@@ -77,12 +79,13 @@ export class StsCredentialCache implements StsCredentialProvider {
           const credentials = { accessKeyId: result.AccessKeyId, accessKeySecret: result.AccessKeySecret,
             stsToken: result.SecurityToken, expiration: new Date(expiry).toISOString() };
           this.cached.set(key, credentials); return credentials;
-        } catch { throw new HttpError("STORAGE_UNAVAILABLE"); }
+        } catch (error) { throw this.options.diagnosticErrors ? storageDiagnostic(error, "sts") : new HttpError("STORAGE_UNAVAILABLE"); }
         finally { this.pending.delete(key); }
       })();
       this.pending.set(key, refresh);
     }
-    return { ...await waitFor(refresh, signal) };
+    try { return { ...await waitFor(refresh, signal) }; }
+    catch (error) { if (this.options.diagnosticErrors && signal?.aborted) throw storageDiagnostic(signal.reason, "sts"); throw error; }
   }
 }
 

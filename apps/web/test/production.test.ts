@@ -16,7 +16,8 @@ test("实际生产入口、chunk 无开发 Mock/凭据/样例，默认走站内�
   while (scripts.length) {
     const src = scripts.pop()!; if (checked.has(src)) continue; checked.add(src);
     const bundle = await readFile(new URL(`../dist${src}`, import.meta.url), "utf8");
-    for (const marker of ["demo-password", "mock-owner", "ov.dev-mock", "devMock=1", "AccessKey", "test/fixtures", "better-sqlite3", "ali-oss", "node:crypto", "node:fs", "account-setup.json", "totpSecret", "auth.key", "SMTP_CONFIG_FILE", "smtp.json", "nodemailer", "mock-password", "MockMailSender"]) assert.equal(bundle.includes(marker), false, `Unexpected production marker: ${marker}`);
+    // AccessKeyId/AccessKeySecret 是正式配置表单标签，不是内置凭据；继续拒绝测试秘密和服务端代码。
+    for (const marker of ["demo-password", "mock-owner", "ov.dev-mock", "devMock=1", "isolated-access-key-secret", "isolated-mail-authorization", "test/fixtures", "better-sqlite3", "ali-oss", "node:crypto", "node:fs", "account-setup.json", "totpSecret", "auth.key", "SMTP_CONFIG_FILE", "smtp.json", "nodemailer", "mock-password", "MockMailSender"]) assert.equal(bundle.includes(marker), false, `Unexpected production marker: ${marker}`);
     for (const name of assets) if (bundle.includes(name)) scripts.push(`/assets/${name}`);
   }
   assert.equal((await readdir(new URL("../dist", import.meta.url))).includes("test"), false);
@@ -24,6 +25,7 @@ test("实际生产入口、chunk 无开发 Mock/凭据/样例，默认走站内�
   const browser = await chromium.launch({ channel: "msedge", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 375, height: 812 } });
+    await page.route("**/api/setup/status", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { stage: "ready", authenticated: false, setupAvailable: false } }) }));
     let checkedSession = false;
     await page.route("**/api/auth/me", async route => { checkedSession = true; await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "AUTH_REQUIRED", message: "请先登录", requestId: "production-test" } }) }); });
     let checkedOptions = false;

@@ -1,5 +1,7 @@
 # SMTP 数据库配置
 
+> **验收状态更新（2026-10-26）：用户确认真实邮件验证已通过。** 下文未发送真实邮件、真实投递待验等表述是当时的执行记录，不再作为当前待办；当前状态见[未完成工作清单](task/UNFINISHED_WORK.md)，v5 配置及正式执行记录见[QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
+
 当前方案为 v5：使用 `smtp_provider_types` 支持类型码表和 `smtp_provider_configs` 分别保存 QQ/163 配置，详见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。以下保留 v4 单条 `smtp_config` 配置方案及实际执行记录；原表不删除，v5 运行时不再读取它。
 
 ## 配置表

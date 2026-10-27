@@ -5,11 +5,12 @@ import type { Readable } from "node:stream";
 import type { StorageAdapter, StorageMetadata, StorageObjectRef, StsCredentialProvider, CredentialPurpose } from "../../../core/contracts/index.js";
 import { HttpError } from "../../../core/errors.js";
 import { ObjectScope, checkAborted } from "./scope.js";
+import { storageDiagnostic } from "./diagnostics.js";
 
 export interface OssCredentials { accessKeyId: string; accessKeySecret: string; stsToken?: string }
 export interface OssOptions {
   bucket: string;
-  region: "cn-hangzhou";
+  region: string;
   endpoint: string;
   objectPrefix: string;
   network: "internal" | "public";
@@ -18,6 +19,8 @@ export interface OssOptions {
   credentialFile?: string;
   /** 简化公共播放仅对本次新上传对象设为公共读，服务端可使用已有长期凭据。 */
   publicUploads?: boolean;
+  /** 新部署配置使用固定安全分类；旧流程保留既有错误契约。 */
+  diagnosticErrors?: boolean;
   /** 仅隔离回归允许旧 key；真实 OSS 永远要求完整登记身份。 */
   allowLegacyTestObjects?: boolean;
 }
@@ -39,9 +42,9 @@ export type OssClientFactory = (options: { region: string; bucket: string; endpo
 
 export function validateOssOptions(options: OssOptions): void {
   new ObjectScope(options.objectPrefix);
-  if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(options.bucket) || options.region !== "cn-hangzhou") throw new HttpError("SERVICE_NOT_CONFIGURED");
+  if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(options.bucket) || !/^[a-z]{2}(?:-[a-z0-9]+){1,4}$/.test(options.region) || options.region.length > 64) throw new HttpError("SERVICE_NOT_CONFIGURED");
   let url: URL; try { url = new URL(options.endpoint); } catch { throw new HttpError("SERVICE_NOT_CONFIGURED"); }
-  const expected = options.network === "internal" ? "oss-cn-hangzhou-internal.aliyuncs.com" : "oss-cn-hangzhou.aliyuncs.com";
+  const expected = `oss-${options.region}${options.network === "internal" ? "-internal" : ""}.aliyuncs.com`;
   if (!["internal", "public"].includes(options.network) || url.protocol !== "https:" || url.hostname !== expected || url.port ||
     url.username || url.password || url.pathname !== "/" || url.search || url.hash || (options.network === "public" && options.allowPublicNetwork !== true)) {
     throw new HttpError("SERVICE_NOT_CONFIGURED");
@@ -94,6 +97,7 @@ export class OssStorageAdapter implements StorageAdapter {
       return result;
     }
     catch (error) {
+      if (this.options.diagnosticErrors) throw storageDiagnostic(signal.aborted ? signal.reason : error, "oss", purpose === "import" ? "list" : undefined);
       if (error instanceof HttpError) throw error;
       if ((error as { status?: number; code?: string }).status === 404 || (error as { code?: string }).code === "NoSuchKey") throw new HttpError("NOT_FOUND");
       if (this.options.publicUploads && ((error as { status?: number }).status === 403 ||
@@ -171,9 +175,14 @@ export class OssStorageAdapter implements StorageAdapter {
     return this.call(input.signal, async client => {
       const result = await client.listV2({ prefix, "max-keys": input.limit,
         ...(input.cursor ? { "continuation-token": input.cursor } : {}) }, {});
-      const items = (result.objects ?? []).map(object => {
-        this.scope.key({ key: object.name }); if (!object.name.startsWith(prefix)) throw new HttpError("FORBIDDEN");
+      const items = (result.objects ?? []).filter(object => {
+        if (typeof object.name !== "string" || !object.name.startsWith(prefix)) throw new HttpError("FORBIDDEN");
         if (!Number.isSafeInteger(object.size) || object.size < 0) throw new HttpError("STORAGE_UNAVAILABLE");
+        // 控制台创建的目录可能返回零字节、以 / 结尾的对象；不是可导入的视频。
+        // 先检查范围再跳过，不能借此隐藏越界对象或丢失下一页游标。
+        if (object.name.endsWith("/") && object.size === 0) { this.scope.subprefix(object.name); return false; }
+        this.scope.key({ key: object.name }); return true;
+      }).map(object => {
         return { object: { kind: "registered" as const, id: "", provider: "oss" as const, bucket: this.options.bucket,
           region: this.options.region, key: object.name, versionId: null, verificationStatus: "pending" as const }, fileName: object.name.split("/").at(-1)!,
           metadata: { sizeBytes: object.size, etag: object.etag, contentType: "application/octet-stream", versionId: null } };

@@ -18,6 +18,7 @@ async function openBrowser() {
 const initialConfig = (): LibraryConfiguration => ({ version: "v1", writable: true, categories: [{ id: "base", name: "基线分类", enabled: true, isDefault: true, tagIds: ["shared"], videoCount: 1, uploadCount: 0 }, { id: "empty", name: "空分类", enabled: true, isDefault: false, tagIds: ["shared"], videoCount: 0, uploadCount: 0 }], tags: [{ id: "shared", name: "共享标签", enabled: true, categoryIds: ["base", "empty"], videoCount: 1, uploadCount: 0 }] });
 const library = (config: LibraryConfiguration) => ({ mediaBaseUrl: "https://oss.meetdawn.top", objectPrefix: "onlineVideo/", categories: config.categories.map(category => ({ id: category.id, name: category.name, enabled: category.enabled, tags: config.tags.filter(tag => tag.enabled && category.tagIds.includes(tag.id)).map(tag => tag.name) })) });
 const owner = { user: { id: "loopback-owner", displayName: "隔离页面测试", totpEnabled: true, authMethod: "totp", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "fixture-csrf" };
+const setupReady = { stage: "ready", authenticated: false, setupAvailable: false };
 
 test("手动封面真实解码：取消、区间缓存、微调、独立保存、恢复、短片异常与最终上传图片", { timeout: 120000 }, async t => {
   const { server, browser, origin } = await openBrowser();
@@ -38,6 +39,7 @@ test("手动封面真实解码：取消、区间缓存、微调、独立保存�
       const request = route.request(); const path = new URL(request.url()).pathname;
       if (!path.startsWith("/api/")) return route.continue();
       const ok = (data: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) });
+      if (path === "/api/setup/status") return ok(setupReady);
       if (path === "/api/auth/me") return ok(owner);
       if (path === "/api/library") return ok(library(initialConfig()));
       if (path === "/api/settings/limits") return ok({ maxUploadBytes: 2147483648, partSizeBytes: 1048576, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
@@ -132,7 +134,7 @@ test("手动封面异常隔离：生成超时、取消后的晚回调、恢复�
     const page = await context.newPage();
     await page.route("**/api/**", route => {
       const path = new URL(route.request().url()).pathname; if (!path.startsWith("/api/")) return route.continue();
-      const data = path === "/api/auth/me" ? owner : path === "/api/library" ? library(initialConfig()) : path === "/api/settings/limits" ? { maxUploadBytes: 2147483648, partSizeBytes: 1048576, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 } : null;
+      const data = path === "/api/setup/status" ? setupReady : path === "/api/auth/me" ? owner : path === "/api/library" ? library(initialConfig()) : path === "/api/settings/limits" ? { maxUploadBytes: 2147483648, partSizeBytes: 1048576, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 } : null;
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) });
     });
     await page.goto(`${origin}/upload`); await page.getByLabel("视频文件", { exact: true }).setInputFiles(fileURLToPath(new URL("./fixtures/cover-timeline.mp4", import.meta.url)));
@@ -184,7 +186,7 @@ test("本机真实视频解析：MP4 covr、无内嵌封面截帧、0.8秒中间
   const sampleDir = process.env.COVER_SAMPLE_DIR ?? fileURLToPath(new URL("../../../.local/acceptance/cover-samples-b8cb9e4c-ed98-464e-a345-2aab7c0f5aa7/", import.meta.url));
   try {
     const context = await browser.newContext({ viewport: { width: 1366, height: 768 } }); await context.addInitScript("window.__name = (fn) => fn;"); const page = await context.newPage(); page.on("pageerror", error => t.diagnostic(`页面错误：${error.message}`)); page.on("console", message => { if (message.type() === "error") t.diagnostic(`控制台错误：${message.text()}`); }); page.on("requestfailed", request => t.diagnostic(`请求失败：${request.url()} ${request.failure()?.errorText}`));
-    await page.route("**/api/**", route => { const path = new URL(route.request().url()).pathname; if (!path.startsWith("/api/")) return route.continue(); const data = path === "/api/auth/me" ? owner : path === "/api/library" ? library(initialConfig()) : path === "/api/settings/limits" ? { maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 } : null; return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) }); });
+    await page.route("**/api/**", route => { const path = new URL(route.request().url()).pathname; if (!path.startsWith("/api/")) return route.continue(); const data = path === "/api/setup/status" ? setupReady : path === "/api/auth/me" ? owner : path === "/api/library" ? library(initialConfig()) : path === "/api/settings/limits" ? { maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 } : null; return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) }); });
     await page.goto(`${origin}/upload`); await expect(page.getByLabel("视频文件", { exact: true })).toBeAttached({ timeout: 5000 }).catch(async error => { t.diagnostic(await page.content()); throw error; });
     await page.evaluate(() => { const descriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!; (window as unknown as { coverSeeks: { duration: number; time: number }[] }).coverSeeks = []; Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { ...descriptor, set(value) { (window as unknown as { coverSeeks: { duration: number; time: number }[] }).coverSeeks.push({ duration: (this as HTMLMediaElement).duration, time: value as number }); descriptor.set!.call(this, value); } }); });
     let embedded: Buffer; let normal: Buffer; let short: Buffer;
@@ -213,6 +215,7 @@ test("隔离页面业务闭环：配置CRUD、多文件逐项编辑、跨页执�
     await context.route("**/api/**", async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname; const method = request.method(); if (!path.startsWith("/api/")) return route.continue(); paths.push(path);
       const ok = (data: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) }); const fail = (code: string) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: { code } }) });
+      if (path === "/api/setup/status") return ok(setupReady);
       if (method !== "GET") assert.equal(request.headers()["x-csrf-token"], "fixture-csrf");
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       if (path === "/api/auth/me") return ok(owner);

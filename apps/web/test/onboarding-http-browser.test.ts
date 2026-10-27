@@ -1,0 +1,86 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import { chromium, expect } from "@playwright/test";
+import { createServer } from "vite";
+import react from "@vitejs/plugin-react";
+import { openDatabase, WORKSPACE_ROOT } from "../../api/src/db/database";
+import { buildInstallationApp, readInstallationConfig } from "../../api/src/core/installation-runtime";
+import { readAuthSettings } from "../../api/src/modules/auth/settings";
+import { initializeInstallation } from "../../api/src/modules/setup/bootstrap";
+import { MockStorageAdapter } from "../../api/src/modules/media/storage/mock";
+import type { MailMessage } from "../../api/src/modules/auth/mail";
+
+test("完整SQL首次部署真浏览器：真实HTTP/SQLite/Cookie/CSRF、独立新库，OSS/邮件替身分列", async t => {
+  const directory = resolve(WORKSPACE_ROOT, ".local/tests", `onboarding-http-browser-${randomUUID()}`); await mkdir(directory, { recursive: true });
+  const path = resolve(directory, "new-install.db");
+  const imported = new Database(path); try { imported.exec(await readFile(resolve(WORKSPACE_ROOT, "docs/sql/NEW_INSTALL_FULL.sql"), "utf8")); } finally { imported.close(); }
+  let database = openDatabase(path);
+  const settings = readAuthSettings("test", { DATABASE_PATH: path, AUTH_KEY_FILE: `${path}.auth.key`, AUTH_ALLOWED_ORIGINS: "http://127.0.0.1:5173", AUTH_MAX_FAILURES: "100" });
+  const initialized = await initializeInstallation(database, settings);
+  const installationCode = (await readFile(initialized.installationCodeFile!, "utf8")).trim().split(/\r?\n/).at(-1)!;
+  const storage = new MockStorageAdapter("demo-videos/"); storage.seed("demo-videos/isolated.mp4", Buffer.from("isolated fixture, not playable media"), "video/mp4");
+  const messages: MailMessage[] = []; const tests: string[] = []; let offset = 0;
+  const settingsOptions = { now: () => new Date(Date.now() + offset), storageFactory: async () => storage, mailSenderFactory: () => ({ send: async (message: MailMessage) => { messages.push(message); }, sendTest: async (to: string) => { tests.push(to); } }) };
+  let runtime = await buildInstallationApp({ database, key: initialized.key, settings, config: readInstallationConfig({ NODE_ENV: "test" }), settingsOptions, logger: false });
+  await runtime.app.listen({ host: "127.0.0.1", port: 0 });
+  const apiPort = (runtime.app.server.address() as { port: number }).port;
+  const vite = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, strictPort: true, proxy: { "/api": { target: `http://127.0.0.1:${apiPort}` } } } });
+  await vite.listen(); const origin = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
+  settings.allowedOrigins.splice(0, settings.allowedOrigins.length, origin);
+  const browser = await chromium.launch({ channel: "msedge", headless: true });
+  t.after(async () => { await browser.close(); await vite.close(); await runtime.app.close(); if (database.client.open) database.close(); });
+  const context = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+  await context.addInitScript("window.__name = (fn) => fn;");
+  // 仅媒体域名使用替身，站内 API 全部由真实后端处理，禁止真实公网媒体访问。
+  await context.route(url => url.origin === "https://media.example.com", route => route.fulfill({ status: 200, contentType: "video/mp4", body: "isolated fixture, not playable media" }));
+  const page = await context.newPage(); page.setDefaultTimeout(12000);
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const statuses: { path: string; status: number }[] = []; page.on("response", response => { const url = new URL(response.url()); if (url.origin === origin && url.pathname.startsWith("/api/")) statuses.push({ path: url.pathname, status: response.status() }); });
+  const password = "isolated-browser-password-2026";
+  const latestCode = () => { const message = [...messages].reverse().find(item => item.kind === "verification"); assert.ok(message?.kind === "verification"); return message.code; };
+  const passwordLogin = async () => { await page.getByLabel("密码", { exact: true }).fill(password); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
+  console.log(`Real HTTP/SQLite onboarding browser evidence (cloud/mail fake): ${directory}`);
+
+  await page.goto(`${origin}/upload`); await expect(page).toHaveURL(`${origin}/setup`);
+  assert.equal((await context.request.get(`${origin}/api/library`)).status(), 409);
+  await page.getByLabel("初始密码", { exact: true }).fill("adminadmin"); await page.getByLabel("一次性安装码").fill(installationCode); await page.getByRole("button", { name: "继续设置", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "必须修改初始密码" })).toBeVisible();
+  const firstCookie = (await context.cookies()).find(cookie => cookie.name === "ov_setup"); assert.ok(firstCookie?.httpOnly); assert.equal(firstCookie.sameSite, "Strict");
+  await page.getByLabel("新密码", { exact: true }).fill(password); await page.getByLabel("确认新密码").fill(password); await page.getByRole("button", { name: "保存新密码并继续" }).click();
+  await expect(page.getByRole("region", { name: "OSS 配置" })).toBeVisible();
+  const changedCookie = (await context.cookies()).find(cookie => cookie.name === "ov_setup"); assert.ok(changedCookie); assert.notEqual(changedCookie.value, firstCookie.value);
+  await page.getByLabel(/^AccessKeyId/).fill("isolated-access-key-id"); await page.getByLabel(/^AccessKeySecret/).fill("isolated-access-key-secret"); await page.getByLabel("Bucket 名称").fill("isolated-bucket"); await page.getByLabel("Bucket 地域").fill("eu-central-1"); await page.getByLabel("对象前缀").fill("demo-videos/"); await page.getByLabel("媒体 HTTPS 地址").fill("https://media.example.com"); await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "保存 OSS 配置", exact: true }).click(); await expect(page.getByLabel(/^AccessKeySecret/)).toHaveValue("");
+  await page.getByRole("button", { name: "测试 OSS 只读连通性", exact: true }).click(); await expect(page.getByRole("status")).toContainText("不能证明上传权限");
+  await page.getByRole("button", { name: "完成设置，前往登录", exact: true }).click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
+  assert.equal((await context.cookies()).some(cookie => cookie.name === "ov_setup"), false); await expect(page.getByLabel(/^动态验证码/)).toHaveCount(0); await passwordLogin();
+
+  await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); await page.getByLabel("公开视频地址", { exact: true }).fill("https://media.example.com/demo-videos/isolated.mp4"); await page.getByLabel("视频标题", { exact: true }).fill("动态域名隔离视频"); await page.getByRole("button", { name: "登记公开视频", exact: true }).click();
+  await expect(page.getByLabel("公共地址", { exact: true })).toHaveValue("https://media.example.com/demo-videos/isolated.mp4");
+  const video = database.client.prepare("SELECT id FROM videos").get() as { id: string }; assert.ok(video.id);
+  await page.goto(`${origin}/videos/${video.id}`); await expect(page.locator("video")).toHaveAttribute("src", "https://media.example.com/demo-videos/isolated.mp4");
+  await expect(page.getByLabel("公共地址", { exact: true })).toHaveValue("https://media.example.com/demo-videos/isolated.mp4");
+  await page.goto(`${origin}/settings`); await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible();
+  await page.getByLabel("发信账号", { exact: true }).fill("owner@qq.com"); await page.getByLabel("SMTP 授权码").fill("isolated-mail-secret"); await expect(page.getByRole("button", { name: "发送测试邮件", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "保存邮件配置", exact: true }).click(); await expect(page.getByLabel("SMTP 授权码")).toHaveValue(""); assert.equal(tests.length, 0);
+  await page.getByLabel("测试收件邮箱").fill("owner@qq.com"); await page.getByRole("button", { name: "发送测试邮件", exact: true }).click(); await expect(page.getByRole("status")).toContainText("SMTP 已接受"); assert.equal(tests.length, 1);
+  let toggle = page.getByRole("region", { name: "登录邮箱验证", exact: true }); await toggle.getByLabel("当前密码").fill(password); await toggle.getByLabel("接收登录验证码的邮箱").fill("owner@qq.com"); await toggle.getByRole("button", { name: "发送开启验证的验证码" }).click(); await expect(toggle.getByLabel("设置确认验证码", { exact: true })).toBeVisible();
+  await toggle.getByLabel("设置确认验证码", { exact: true }).fill(latestCode()); await toggle.getByRole("button", { name: "确认开启邮箱验证" }).click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
+  await page.getByLabel("密码", { exact: true }).fill(password); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByLabel("邮箱验证码", { exact: true })).toBeVisible(); await page.getByLabel("邮箱验证码", { exact: true }).fill(latestCode()); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
+  offset += 60001; await page.goto(`${origin}/settings`); toggle = page.getByRole("region", { name: "登录邮箱验证", exact: true }); await toggle.getByLabel("当前密码").fill(password); await toggle.getByRole("button", { name: "发送关闭验证的验证码" }).click(); await expect(toggle.getByLabel("设置确认验证码", { exact: true })).toBeVisible(); await toggle.getByLabel("设置确认验证码", { exact: true }).fill(latestCode()); await toggle.getByRole("button", { name: "确认关闭邮箱验证" }).click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible(); await expect(page.getByLabel(/^动态验证码/)).toHaveCount(0); await passwordLogin();
+
+  await page.goto("about:blank");
+  await runtime.app.close(); database.close(); database = openDatabase(path); const restored = await initializeInstallation(database, settings); assert.equal(restored.installationCodeFile, null);
+  runtime = await buildInstallationApp({ database, key: restored.key, settings, config: readInstallationConfig({ NODE_ENV: "test" }), settingsOptions, logger: false }); await runtime.app.listen({ host: "127.0.0.1", port: apiPort });
+  await page.goto(`${origin}/settings`); await expect(page.getByRole("heading", { name: "系统设置", exact: true })).toBeVisible(); await expect(page.getByLabel("Bucket 名称")).toHaveValue("isolated-bucket"); await expect(page.getByLabel("对象前缀")).toHaveValue("demo-videos/"); await expect(page.getByRole("heading", { name: "登录邮箱验证：未开启" })).toBeVisible();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); await page.screenshot({ path: resolve(directory, "phone-settings-after-restart.png"), fullPage: true });
+  const stored = await page.evaluate(() => JSON.stringify({ local: Object.entries(localStorage), session: Object.entries(sessionStorage) }));
+  for (const secret of [password, installationCode, "isolated-access-key-secret", "isolated-mail-secret"]) assert.equal(stored.includes(secret), false);
+  assert.equal(database.client.pragma("integrity_check", { simple: true }), "ok"); assert.deepEqual(database.client.pragma("foreign_key_check"), []); assert.deepEqual(errors, []);
+  assert.equal(statuses.some(item => item.path === "/api/setup/complete" && item.status === 200), true);
+});

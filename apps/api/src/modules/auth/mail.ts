@@ -48,12 +48,19 @@ export class SmtpMailSender implements MailSender {
       greetingTimeout: config.timeoutMs ?? 15_000, socketTimeout: config.timeoutMs ?? 15_000, logger: false, debug: false });
   }
   async send(message: MailMessage): Promise<void> {
-    const purposes: Record<EmailChallengePurpose, string> = { login: "登录", bind_email: "绑定邮箱", change_password: "修改密码", change_email_old: "验证原邮箱", change_email_new: "验证新邮箱" };
+    const purposes: Record<EmailChallengePurpose, string> = { login: "登录", bind_email: "绑定邮箱", change_password: "修改密码", change_email_old: "验证原邮箱", change_email_new: "验证新邮箱", email_verification: "切换邮箱登录验证" };
     const text = message.kind === "verification"
       ? `您正在${purposes[message.purpose]}，验证码是：${message.code}\n验证码有效期至 ${message.expiresAt}。请勿转发；若非本人操作，请忽略本邮件。`
       : `您的视频库账号${message.purpose === "password_changed" ? "密码" : "绑定邮箱"}已于 ${message.changedAt} 修改。全部站内登录会话已撤销。若非本人操作，请使用受保护的本地恢复流程。`;
     const result = await this.transport.sendMail({ from: this.config.from, to: message.to,
-      subject: message.kind === "verification" ? "视频库账号邮箱验证码" : "视频库账号安全通知", text });
+      subject: message.kind === "verification" ? "视频库账号邮箱验证码" : "视频库账号安全通知", text, disableFileAccess: true, disableUrlAccess: true });
+    if (!result.accepted?.length || result.rejected?.length) throw new HttpError("MAIL_SEND_FAILED");
+  }
+  /** 只发送明确标注的测试邮件；SMTP 接受不等于最终收件箱送达。 */
+  async sendTest(to: string): Promise<void> {
+    const result = await this.transport.sendMail({ from: this.config.from, to, subject: "视频库 SMTP 配置测试",
+      text: "这是一封由管理员主动发送的视频库 SMTP 配置测试邮件，不包含登录验证码。收到邮件表示此收件地址的实际投递可用。",
+      disableFileAccess: true, disableUrlAccess: true });
     if (!result.accepted?.length || result.rejected?.length) throw new HttpError("MAIL_SEND_FAILED");
   }
 }
@@ -94,4 +101,18 @@ export function loadMailSender(database: AppDatabase, key: Buffer): MailSender {
     }
     return new ProviderMailSender(database, senders);
   } catch { throw new ConfigurationError("数据库 SMTP 配置无法读取或解密，请检查配置与匹配的账号安全密钥"); }
+}
+
+/** 网页保存后下一次发送即读取最新配置，不缓存明文授权码，也不自动发送测试信。 */
+export function createDynamicMailSender(database: AppDatabase, key: Buffer,
+  factory: (configuration: SmtpConfiguration) => MailSender = configuration => new SmtpMailSender(configuration)): MailSender {
+  return { async send(message) {
+    const provider = requireSupportedEmailProvider(database, message.to);
+    const row = database.orm.select().from(smtpProviderConfigs).where(eq(smtpProviderConfigs.providerCode, provider.code)).get();
+    if (!row) throw new HttpError("MAIL_NOT_CONFIGURED");
+    let configuration: SmtpConfiguration;
+    try { configuration = validateSmtpConfiguration({ ...row, password: decryptSecret(row.passwordCipher, key, "smtp") }); }
+    catch { throw new HttpError("MAIL_NOT_CONFIGURED"); }
+    await factory(configuration).send({ ...message, to: normalizeEmailAddress(message.to)! });
+  } };
 }

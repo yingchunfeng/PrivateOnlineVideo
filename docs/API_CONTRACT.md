@@ -1,13 +1,35 @@
 # 前后端与媒体模块契约 V0.5
 
+## 2026-10-26：新部署初始化与配置扩展
+
+新部署 v6 使用独立入口，流程见[新部署指南](NEW_INSTALL.md)。实际 DTO 以 `packages/shared/src/installation.ts` 和 `dto.ts` 为准；旧 v5 不自动迁移，原接口继续兼容。
+
+| 方法与路径 | 用途与权限 |
+| --- | --- |
+| `GET /api/setup/status` | 公开安装阶段 `password/configuration/ready`，不返回安装码或配置秘密 |
+| `POST /api/setup/login` | 首次密码＋安装码取得受限安装 Cookie；配置阶段改用已设新密码 |
+| `POST /api/setup/password` | 受限 Cookie＋CSRF 强制改密，返回轮换后的安装状态与 CSRF |
+| `POST /api/setup/complete` | 提交空对象，受限 Cookie＋CSRF；已保存 OSS 且只读检查通过才完成，返回 `{success:true}` 并撤销安装会话；客户端再查状态确认 ready |
+| `POST /api/setup/logout` | 撤销当前安装会话 |
+| `GET /api/installation/settings` | 配置阶段受限会话或已完成安装的正式账号，返回脱敏配置和测试状态 |
+| `PUT /api/installation/oss`、`PUT /api/installation/mail` | 同上，额外要求 CSRF 和配置版本；只保存，不自动网络测试 |
+| `POST /api/installation/oss/test` | 限流的前缀列表只读测试，明确 `writePermissionVerified:false` |
+| `POST /api/installation/mail/test` | 配置保存后主动发送测试信，只报告 `delivery:"smtp-accepted"` |
+| `POST /api/auth/password/direct` | 已登录纯密码账号，当前密码＋新密码确认；邮箱模式不能借此绕过验证码 |
+| `POST /api/auth/email-verification/code`、`confirm` | 已登录账号，当前密码＋真实收码开启/关闭验证；成功后所有会话失效 |
+
+`AuthMethod` 新增 `password`，对应登录请求为 `{authMethod:"password",password}`；原 `totp/email` 契约保持。秘密仅服务端加密保存；前端媒体校验使用鉴权 `/api/library` 的域名/前缀，不放开任意 HTTPS 地址。安装未完成时，后端拒绝普通业务和正常登录请求，前端也不创建业务上传队列。
+
+以下保留原阶段契约及历史验收范围。
+
 2026-10-04 邮箱类型补充：`GET /api/auth/login/options` 与已登录的 `/api/auth/security` 增加公开 `emailProviders: [{code,name,domain}]`，仅列启用的 QQ/163 类型，不返回 SMTP 凭证或服务地址。绑定/修改邮箱只接受完整支持域名，类型停用后发码与确认均拒绝；错误码 `EMAIL_PROVIDER_UNSUPPORTED` 为 400。多类型配置及控制见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
 
-第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；详见[第二阶段契约](STAGE2_API_CONTRACT.md)与[后端交接](STAGE2_BACKEND_HANDOFF.md)。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
+第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；详见[第二阶段契约](archive/STAGE2_API_CONTRACT.md)与[后端交接](archive/STAGE2_BACKEND_HANDOFF.md)。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
 
 日期：2026-10-02
 
 性质：真实鉴权/SQLite组织、视频库、观看记录、分模式用量及媒体统一装配已实现，运行须显式资源配置与版本2库
-依据：[PRD](../PRD.md)、[任务总看板](../TASKS.md)
+依据：[PRD](PRD.md)、[任务总看板](archive/task/TASKS.md)
 
 ## 1. 基本约定
 

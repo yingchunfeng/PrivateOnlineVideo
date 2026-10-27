@@ -9,6 +9,8 @@ import { VideoPage } from "./pages/Video";
 import { UploadPage } from "./pages/Upload";
 import { SecurityPage } from "./pages/Security";
 import { TasksPage } from "./pages/Tasks";
+import { InstallationSettingsPage } from "./pages/InstallationSettings";
+import { SetupGate } from "./setup";
 import { UploadQueueProvider } from "./upload-context";
 import { FeedbackProvider, useFeedback } from "./feedback";
 import { Icon, Empty, ErrorNotice } from "./ui";
@@ -18,9 +20,9 @@ export function App() {
   return (
     <>
       <a href="#main" className="skip">跳到内容</a>
-      <FeedbackProvider><AuthProvider key={revision}>
+      <FeedbackProvider><SetupGate><AuthProvider key={revision}>
         <UploadQueueProvider><AppLayout revision={revision} setRevision={setRevision} /></UploadQueueProvider>
-      </AuthProvider></FeedbackProvider>
+      </AuthProvider></SetupGate></FeedbackProvider>
     </>
   );
 }
@@ -63,6 +65,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
               <span>配置管理</span>
             </NavLink>
             <NavLink to="/tasks" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="history" /><span>任务列表</span></NavLink>
+            <NavLink to="/settings" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="settings" /><span>系统设置</span></NavLink>
             <NavLink to="/security" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="shield" />
               <span>账户安全</span>
@@ -152,6 +155,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
             <Route path="/upload" element={protectedPage(<UploadPage />)} />
             <Route path="/tasks" element={protectedPage(<TasksPage />)} />
             <Route path="/categories" element={protectedPage(<CategoriesPage />)} />
+            <Route path="/settings" element={protectedPage(<InstallationSettingsPage />)} />
             <Route path="/security" element={protectedPage(<SecurityPage />)} />
             <Route path="*" element={<Empty title="页面不存在"><NavLink className="text-link" to="/">返回视频库</NavLink></Empty>} />
           </Routes>
@@ -166,6 +170,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
             ["/upload", "上传", "upload"],
             ["/tasks", "任务", "history"],
             ["/categories", "配置", "settings"],
+            ["/settings", "系统", "settings"],
             ["/security", "安全", "shield"]
           ].map(([path, label, icon]) => (
             <NavLink key={path} to={path!} end={path === "/"}>

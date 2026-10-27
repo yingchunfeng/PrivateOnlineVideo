@@ -10,7 +10,9 @@ dist/
 *.db
 *.db-*
 *.log
+config/library.json.backup.*.json
 # 真实样例与截图只留本机，不纳入代码或发布产物。
 docs/ces.mp4
 apps/web/qa/stage2-real-*/
 apps/web/qa/stage2-long-*/
+启动.txt

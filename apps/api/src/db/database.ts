@@ -32,7 +32,7 @@ export function guardDatabasePath(path: string): string {
   if (!result.endsWith(".db")) throw new ConfigurationError("数据库必须是 .local 内的独立 .db 文件");
   return result;
 }
-export const MIGRATIONS = ["0001-initial.sql", "0002-library-organizing.sql", "0003-account-email.sql", "0004-smtp-config.sql", "0005-smtp-providers.sql"] as const;
+export const MIGRATIONS = ["0001-initial.sql", "0002-library-organizing.sql", "0003-account-email.sql", "0004-smtp-config.sql", "0005-smtp-providers.sql", "0006-onboarding.sql"] as const;
 export function migrationManifest() {
   return MIGRATIONS.map((name, index) => {
     const sql = readFileSync(new URL(`./migrations/${name}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -42,7 +42,8 @@ export function migrationManifest() {
 function validateLedger(client: Database.Database, latest: boolean) {
   const recorded = client.prepare("SELECT version,checksum FROM schema_migrations ORDER BY version").all() as { version: number; checksum: string }[];
   const expected = migrationManifest();
-  if (!recorded.length || recorded.length > expected.length || (latest && recorded.length !== expected.length) ||
+  // v5 既有实例继续使用旧配置/认证；不因新增安装向导自动升级正式库。
+  if (!recorded.length || recorded.length > expected.length || (latest && recorded.length !== expected.length && recorded.length !== 5) ||
     recorded.some((row, index) => row.version !== expected[index]?.version || row.checksum !== expected[index]?.checksum)) {
     throw new ConfigurationError("数据库迁移版本/顺序/校验与当前源码不一致；需明确目标并授权迁移，不会自动升级");
   }

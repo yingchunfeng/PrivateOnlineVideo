@@ -44,7 +44,7 @@ export function assertMediaDependencies(config: AppConfig, registration: MediaRe
   if (dependencies.config !== config || typeof dependencies.now !== "function") {
     throw new ConfigurationError("媒体注册必须使用应用同一份 config，并提供 now");
   }
-  if (config.environment !== "test" && (!config.media || (!config.library && config.maxPlaybackSessions === null) || (config.storageDriver === "oss" && !config.oss))) {
+  if (config.environment !== "test" && (!config.media || (!config.library && config.maxPlaybackSessions === null) || (config.storageDriver === "oss" && !config.oss && !config.installationMode))) {
     if (dependencies.kind !== "test") throw new ConfigurationError("完整业务装配缺少明确上传/授权控制配置");
   }
   if (!["test", "development", "production"].includes(dependencies.kind) || dependencies.storage.driver !== config.storageDriver) {
@@ -66,7 +66,7 @@ export function assertMediaDependencies(config: AppConfig, registration: MediaRe
   if (config.environment === "production" && (dependencies.kind !== "production" || config.storageDriver === "mock")) {
     throw new ConfigurationError("生产媒体注册拒绝测试依赖和 Mock 存储");
   }
-  if (config.environment === "production" && (!config.media || !config.oss || !config.oss.playbackEndpoint.startsWith("https://"))) {
+  if (config.environment === "production" && (!config.media || (!config.installationMode && (!config.oss || !config.oss.playbackEndpoint.startsWith("https://"))))) {
     throw new ConfigurationError("生产缺少真实OSS/HTTPS及资源控制配置");
   }
 }

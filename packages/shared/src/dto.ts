@@ -15,7 +15,7 @@ export type UploadStatus = typeof UPLOAD_STATUSES[number];
 export interface ApiResponse<T> { data: T }
 export interface Page<T> { items: T[]; page: number; pageSize: number; total: number }
 export interface PaginationQuery { page?: number; pageSize?: number }
-export type AuthMethod = "totp" | "email";
+export type AuthMethod = "password" | "totp" | "email";
 export interface CurrentUser { id: ResourceId; displayName: string; totpEnabled: boolean; authMethod: AuthMethod; authVersion: number; emailMasked: string | null; emailVerified: boolean }
 export interface Category { id: ResourceId; name: string; sortOrder: number; isDefault?: boolean; archivedAt?: IsoDateTime | null }
 export interface LibraryGroup { id: ResourceId; name: string; description: string; sortOrder: number; createdAt: IsoDateTime; updatedAt: IsoDateTime; archivedAt: IsoDateTime | null }
@@ -158,12 +158,13 @@ export interface HealthData { status: "ok" }
 export type HealthResponse = ApiResponse<HealthData>;
 /** 无 authMethod 的旧请求仅在账号处于 TOTP 模式时兼容。 */
 export type LoginRequest =
+  | { authMethod: "password"; password: string; totp?: never; challengeId?: never; code?: never }
   | { authMethod?: "totp"; password: string; totp: string; challengeId?: never; code?: never }
   | { authMethod: "email"; password: string; challengeId: ResourceId; code: string; totp?: never };
 /** 未登录摘要不披露邮箱；密码验证通过后的发码响应才返回脱敏邮箱。 */
 export interface LoginOptions { authMethod: AuthMethod; serverTime: IsoDateTime; emailProviders: EmailProviderType[] }
 export interface LoginCodeRequest { password: string }
-export type EmailChallengePurpose = "login" | "bind_email" | "change_password" | "change_email_old" | "change_email_new";
+export type EmailChallengePurpose = "login" | "bind_email" | "change_password" | "change_email_old" | "change_email_new" | "email_verification";
 export interface EmailChallenge { challengeId: ResourceId; operationId: ResourceId | null; maskedEmail: string; serverTime: IsoDateTime; expiresAt: IsoDateTime; resendAt: IsoDateTime }
 export interface AccountSecuritySummary { authMethod: AuthMethod; authVersion: number; email: string | null; emailVerified: boolean; emailVerifiedAt: IsoDateTime | null; totpAvailable: boolean; serverTime: IsoDateTime; emailProviders: EmailProviderType[] }
 export interface BindEmailRequest { currentPassword: string; totp: string; email: string }

@@ -16,7 +16,7 @@ export function createMediaModule(options: MediaOptions): MediaModule {
   validateOptions(options);
   const register: MediaModule = async (app, dependencies) => {
     assertMediaDependencies(dependencies.config, { register, dependencies });
-    const context = { dependencies, options, scope: new ObjectScope(options.objectPrefix), limiter: new RequestLimiter(options.requestsPerMinute) };
+    const context = { dependencies, options, get scope() { return new ObjectScope(dependencies.config.library?.objectPrefix ?? options.objectPrefix); }, limiter: new RequestLimiter(options.requestsPerMinute) };
     await app.register(async scoped => {
       // 鉴权发生在原始分片解析和媒体数据读取之前；生产依赖从不提供放行默认值。
       scoped.addHook("onRequest", async request => {
