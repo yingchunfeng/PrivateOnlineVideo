@@ -1,7 +1,12 @@
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { applyTheme, readTheme } from "./theme";
+import { ThemeProvider } from "./theme-context";
 import "./styles.css";
+import "./theme-light.css";
+import "./theme-switcher.css";
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
-createRoot(root).render(<BrowserRouter><App /></BrowserRouter>);
+applyTheme(readTheme());
+createRoot(root).render(<ThemeProvider><BrowserRouter><App /></BrowserRouter></ThemeProvider>);

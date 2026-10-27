@@ -1,0 +1,53 @@
+/* Scoped overrides preserve the existing dark theme and media canvases. */
+:root:not([data-theme="dark"]) body::before {
+  background: radial-gradient(ellipse at 50% -20%, rgba(14, 116, 194, .06), transparent 70%);
+}
+:root:not([data-theme="dark"]) :is(h1, .side-logo-title) {
+  background-image: linear-gradient(135deg, var(--text) 40%, var(--accent-secondary) 100%);
+}
+:root:not([data-theme="dark"]) :is(h2, h3, .video-main-title-row h2, .sci-data-title strong, .sci-data-value.code, .sci-section-title) { color: var(--text); }
+:root:not([data-theme="dark"]) :is(input, select, textarea) { background: var(--surface-solid); }
+:root:not([data-theme="dark"]) :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:root:not([data-theme="dark"]) :is(.sci-input, .sci-select) { background: var(--surface-solid) !important; }
+:root:not([data-theme="dark"]) .side-dock { background: rgba(248, 251, 255, .96); box-shadow: 4px 0 24px rgba(31, 61, 94, .05); }
+:root:not([data-theme="dark"]) .side-nav-item:hover { background: var(--surface-elevated); }
+:root:not([data-theme="dark"]) .side-nav-item.active { background: var(--accent-surface); color: var(--accent); border-color: var(--border-glow); box-shadow: none; }
+:root:not([data-theme="dark"]) .side-nav-item.active svg { filter: none; }
+:root:not([data-theme="dark"]) .bottom-nav { background: rgba(255, 255, 255, .96); box-shadow: var(--card-shadow); }
+:root:not([data-theme="dark"]) .bottom-nav a.active { background: var(--accent-surface); box-shadow: none; }
+:root:not([data-theme="dark"]) :is(.side-storage-widget, .filter-drawer-inner, .sci-data-panel, .multi-choice, .storage-chip, .cover-preview-panel, .sci-form-panel, .upload-progress-box, .cfg-tabs, .cfg-search-box) { background: var(--surface); box-shadow: var(--card-shadow); }
+:root:not([data-theme="dark"]) :is(.mode-chip, .badge, .filter-trigger-btn, .metadata > div, .category-pill-badge, .sci-data-cell, .file-summary, .choice-grid .check-row, .back-nav-btn, .tag-chip, .spec-row, .cfg-guide-tip) { background: var(--surface-high); }
+:root:not([data-theme="dark"]) :is(.storage-circle-gauge, .usage-meter, .neon-progress-bar) { background: var(--surface-high); border-color: var(--border); box-shadow: none; }
+:root:not([data-theme="dark"]) .storage-circle-gauge { border-top-color: var(--accent); border-right-color: var(--accent); }
+:root:not([data-theme="dark"]) :is(.storage-widget-val, .tag-chip.active, .auto-gen-badge, .cfg-type-tag, .cover-thumb-tag, .state-badge.ready) { background: var(--accent-surface); color: var(--accent); }
+:root:not([data-theme="dark"]) .filter-trigger-btn.active { background: var(--accent-surface) !important; }
+:root:not([data-theme="dark"]) :is(.organization-badges .badge, .cfg-state-tag.default) { color: var(--energy-purple); background: var(--energy-purple-surface); }
+:root:not([data-theme="dark"]) :is(.spec-value.code, .cfg-default-tip) { color: var(--energy-purple); }
+:root:not([data-theme="dark"]) .cfg-card { background: var(--surface) !important; box-shadow: var(--card-shadow) !important; }
+:root:not([data-theme="dark"]) .cfg-tab-pill:hover:not(.active) { background: var(--surface-elevated) !important; }
+:root:not([data-theme="dark"]) .cfg-tab-num { background: var(--accent-surface); color: var(--accent); }
+:root:not([data-theme="dark"]) .empty { background: var(--surface-high); }
+:root:not([data-theme="dark"]) .notice { background: var(--surface-high); box-shadow: none; }
+:root:not([data-theme="dark"]) .notice.error { background: var(--error-surface); }
+:root:not([data-theme="dark"]) :is(.mock-banner, .notice.warning) { background: var(--warning-surface); }
+:root:not([data-theme="dark"]) .floating-toast { background: var(--surface-solid); }
+:root:not([data-theme="dark"]) :is(.feedback-confirm, .cover-picker)::backdrop { background: rgba(24, 42, 64, .4); }
+:root:not([data-theme="dark"]) :is(.video-card, .radar-dropzone) { box-shadow: var(--card-shadow); }
+:root:not([data-theme="dark"]) .video-card:hover { box-shadow: 0 12px 30px rgba(31, 61, 94, .15); }
+:root:not([data-theme="dark"]) :is(.thumbnail.placeholder, .radar-dropzone, .cover-thumb-inner.placeholder) { background: radial-gradient(ellipse at 50% 30%, #ffffff, #e6effa); }
+:root:not([data-theme="dark"]) .radar-dropzone.has-file { background: radial-gradient(ellipse at 50% 30%, #ffffff, var(--accent-surface)); }
+:root:not([data-theme="dark"]) .placeholder-art { background: linear-gradient(120deg, #f4f8ff, #dae8f8); }
+:root:not([data-theme="dark"]) .cover-thumb-inner.alt1 { background: linear-gradient(135deg, #e5f4ff, #f7fbff); }
+:root:not([data-theme="dark"]) .cover-thumb-inner.alt2 { background: linear-gradient(135deg, #ede6fa, #faf8ff); }
+:root:not([data-theme="dark"]) .sci-card-hud-time { color: #f8fafc; }
+:root:not([data-theme="dark"]) :is(button, .button) { box-shadow: none; border-color: var(--border-glow); }
+:root:not([data-theme="dark"]) :is(button.secondary, .button.secondary):hover { background: var(--surface-elevated); color: var(--accent); }
+:root:not([data-theme="dark"]) :is(button.selected, .button.selected):hover { background: var(--gradient-purple); color: #ffffff; }
+:root:not([data-theme="dark"]) button.danger:hover { background: var(--error-surface); color: var(--error); }
+:root:not([data-theme="dark"]) .confirm-danger { background: var(--error-surface); color: var(--error); border-color: var(--error); }
+:root:not([data-theme="dark"]) .confirm-danger:hover { background: var(--error); color: #ffffff; }
+:root:not([data-theme="dark"]) :is(.save-action-btn, .cfg-tab-pill.active, .cfg-save-btn) { box-shadow: none !important; }
+:root:not([data-theme="dark"]) :is(.usage-main strong, .state-text.ready, .text-link:hover) { text-shadow: none; }
+:root:not([data-theme="dark"]) .theme-switcher .theme-option { background: transparent; color: var(--text-secondary); border-color: transparent; }
+:root:not([data-theme="dark"]) .theme-switcher .theme-option:hover { background: var(--surface-elevated); color: var(--text); }
+:root:not([data-theme="dark"]) .theme-switcher .theme-option[aria-pressed="true"] { background: var(--surface-solid); color: var(--accent); border-color: var(--border-glow); box-shadow: var(--accent-glow); }

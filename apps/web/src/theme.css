@@ -1,4 +1,47 @@
 :root {
+  color-scheme: light;
+  --background: #ffffff;
+  --background-radial: radial-gradient(ellipse at 50% 0%, #edf6ff 0%, #ffffff 72%);
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-solid: #ffffff;
+  --surface-high: #f0f5fb;
+  --surface-elevated: #e4eef8;
+  --border: #c8d7e6;
+  --border-glow: rgba(3, 105, 161, 0.4);
+  --border-subtle: #dce5ef;
+  --text: #182a40;
+  --text-secondary: #4b6178;
+  --muted: #596c82;
+  --accent: #0369a1;
+  --accent-secondary: #075f94;
+  --accent-hover: #075985;
+  --on-accent: #ffffff;
+  --accent-surface: #e5f2fc;
+  --accent-glow: 0 4px 16px rgba(3, 105, 161, 0.12);
+  --energy-purple: #7042b6;
+  --energy-purple-hover: #6035a2;
+  --energy-purple-surface: #f2ecfb;
+  --purple-glow: 0 4px 16px rgba(112, 66, 182, 0.12);
+  --gradient-cyber: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+  --gradient-cyber-hover: linear-gradient(135deg, #075985 0%, #1e40af 100%);
+  --gradient-fusion: linear-gradient(135deg, #0369a1 0%, #7042b6 100%);
+  --gradient-purple: linear-gradient(135deg, #7042b6 0%, #4f46bb 100%);
+  --error: #b42342;
+  --error-surface: #fff0f3;
+  --error-glow: 0 4px 16px rgba(180, 35, 66, 0.1);
+  --warning: #8a5100;
+  --warning-surface: #fff7e6;
+  --success: #08734f;
+  --success-surface: #e8f7ef;
+  --card-shadow: 0 8px 28px rgba(31, 61, 94, 0.08);
+  --glass-blur: blur(16px);
+  --text-primary: var(--text);
+  --bg-main: var(--background);
+  --bg-card: var(--surface-solid);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
   /* 深度深空与宇宙黑背景 */
   --background: #080c14;
   --background-radial: radial-gradient(circle at 50% 0%, #0d1a2d 0%, #080c14 75%);
@@ -33,6 +76,7 @@
 
   /* 双色离子渐变 */
   --gradient-cyber: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  --gradient-cyber-hover: linear-gradient(135deg, #38f9d7 0%, #4facfe 100%);
   --gradient-fusion: linear-gradient(135deg, #00f2fe 0%, #a855f7 100%);
   --gradient-purple: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
 

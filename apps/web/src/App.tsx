@@ -14,12 +14,14 @@ import { SetupGate } from "./setup";
 import { UploadQueueProvider } from "./upload-context";
 import { FeedbackProvider, useFeedback } from "./feedback";
 import { Icon, Empty, ErrorNotice } from "./ui";
+import { ThemeSwitcher } from "./theme-context";
 
 export function App() {
   const [revision, setRevision] = useState(0);
   return (
     <>
       <a href="#main" className="skip">跳到内容</a>
+      <header className="theme-toolbar"><span>界面外观</span><ThemeSwitcher /></header>
       <FeedbackProvider><SetupGate><AuthProvider key={revision}>
         <UploadQueueProvider><AppLayout revision={revision} setRevision={setRevision} /></UploadQueueProvider>
       </AuthProvider></SetupGate></FeedbackProvider>
@@ -73,6 +75,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           </nav>
 
           {/* 左下角：存储空间仪表盘 HUD Widget */}
+          <div className="side-theme"><span>界面外观</span><ThemeSwitcher /></div>
           <div className="side-storage-widget">
             <div className="storage-widget-header">
               <span className="storage-widget-title">媒体存储</span>

@@ -1,6 +1,6 @@
 @import url('./theme.css');
 * { box-sizing: border-box; }
-html { color-scheme: dark; font-size: 16px; scroll-behavior: smooth; }
+html { font-size: 16px; scroll-behavior: smooth; }
 body {
   margin: 0;
   background-color: var(--background);
@@ -40,7 +40,7 @@ button, .button {
   overflow: hidden;
 }
 button:hover, .button:hover {
-  background: linear-gradient(135deg, #38f9d7 0%, #4facfe 100%);
+  background: var(--gradient-cyber-hover);
   box-shadow: 0 0 24px rgba(0, 242, 254, 0.45);
   transform: translateY(-1px);
 }
