@@ -31,6 +31,12 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
+# Compile native addons against this image's headers instead of downloading them again.
+ENV npm_config_nodedir=/usr/local
+RUN test -s /usr/local/include/node/node.h \
+    && test -s /usr/local/include/node/node_version.h \
+    && test -s /usr/local/include/node/common.gypi \
+    && test -s /usr/local/include/node/config.gypi
 
 FROM manifests AS dependencies
 RUN npm ci --registry="${NPM_REGISTRY}" --no-audit --no-fund

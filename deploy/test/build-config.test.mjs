@@ -72,6 +72,23 @@ test("global npm and both locked dependency installs use the selected registry",
   assert.match(dockerfile, /FROM manifests AS production-dependencies/);
 });
 
+test("native installs reuse the builder's Node headers after checking required files", () => {
+  const stage = dockerfile.split("FROM node-base AS manifests")[1].split(/\r?\nFROM /)[0];
+  assert.match(stage, /^ENV npm_config_nodedir=\/usr\/local\r?$/m);
+  for (const name of ["node.h", "node_version.h", "common.gypi", "config.gypi"]) {
+    assert.ok(stage.includes(`test -s /usr/local/include/node/${name}`), name);
+  }
+  assert.doesNotMatch(dockerfile, /--ignore-scripts/);
+});
+
+test("the local-header setting is build-only and does not leak into the runtime base", () => {
+  const base = dockerfile.split("FROM ${NODE_IMAGE} AS node-base")[1].split(/\r?\nFROM /)[0];
+  const runtime = dockerfile.split("FROM node-base AS api")[1].split(/\r?\nFROM /)[0];
+  assert.equal(dockerfile.split("ENV npm_config_nodedir=/usr/local").length - 1, 1);
+  assert.doesNotMatch(base, /npm_config_nodedir/);
+  assert.doesNotMatch(runtime, /npm_config_nodedir/);
+});
+
 test("base image sources remain official and configurable without a public proxy", () => {
   assert.match(dockerfile, /ARG NODE_IMAGE=node:22-bookworm-slim/);
   assert.match(dockerfile, /ARG NGINX_IMAGE=nginx:stable-alpine/);

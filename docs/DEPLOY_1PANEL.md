@@ -223,6 +223,8 @@ docker compose --env-file ../config/compose.env build --pull
 
 精简 Node 镜像可能没有系统 CA 证书包。构建会在缺少系统证书文件时，用 Node 官方镜像内置的 Mozilla 根证书创建引导信任包；已有系统证书文件不会覆盖。APT 全程通过 HTTPS 校验证书，随后安装 Debian 的 `ca-certificates` 包。若日志出现 `No system certificates available`，应检查是否已拉取包含该引导步骤的 Dockerfile，不要用关闭证书校验或 `trusted=yes` 的方式绕过。参考：[Node.js 内置根证书](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates)、[Debian HTTPS 传输说明](https://manpages.debian.org/bookworm/apt/apt-transport-https.1.en.html)。
 
+`better-sqlite3` 等原生模块编译需要 Node 头文件，npm registry 设置不会接管 `node-gyp` 对 `nodejs.org` 的独立下载。构建阶段设置 `npm_config_nodedir=/usr/local`，直接复用官方 Node 镜像自带、与运行时版本匹配的 `/usr/local/include/node`，并在两类依赖安装前检查必要文件。该设置不进入最终 API 运行镜像，不需要升级宿主机 Node/npm，也不跳过安装脚本。自定义 `NODE_IMAGE` 时必须提供对应版本的完整头文件；缺失会提前失败，不自动回退到外网下载。参考：[官方 Node 镜像构建文件](https://github.com/nodejs/docker-node/blob/main/22/bookworm-slim/Dockerfile)、[node-gyp 本地头文件配置](https://github.com/nodejs/node-gyp/blob/v11.2.0/lib/configure.js)。
+
 APT 构建步骤使用 IPv4，索引更新最多 180 秒，依赖安装最多 600 秒，并设置网络超时及有限重试。这个限制不涵盖 Docker 基础镜像元数据查询、镜像拉取、npm 安装或项目编译；它们仍可能单独耗时。
 
 如果目标服务器访问这些镜像不稳定，可通过构建参数显式切回官方源，无需修改 Dockerfile：
