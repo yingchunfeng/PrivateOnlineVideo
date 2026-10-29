@@ -219,6 +219,20 @@ docker compose --env-file ../config/compose.env build --pull
 
 构建生成 `online-video-api:local`、`online-video-web:local`。前后端共享依赖构建缓存；后端使用生产依赖和编译后的 JS，前端使用 Vite 生产产物，不启用 Mock。最终 API 镜像不带编译工具链。
 
+构建默认优先使用阿里云 Debian 镜像 `https://mirrors.aliyun.com` 和阿里云镜像站列出的 npm 镜像 `https://registry.npmmirror.com`。仅替换镜像内的 APT 下载地址和 npm 构建命令，不修改宿主机软件源、本地 `.npmrc`、锁文件或数据库；APT 的 Debian 签名校验和 npm 的完整性校验保持启用。npm 包安装脚本另行访问的 GitHub 等地址不保证被加速。
+
+APT 构建步骤使用 IPv4，索引更新最多 180 秒，依赖安装最多 600 秒，并设置网络超时及有限重试。这个限制不涵盖 Docker 基础镜像元数据查询、镜像拉取、npm 安装或项目编译；它们仍可能单独耗时。
+
+如果目标服务器访问这些镜像不稳定，可通过构建参数显式切回官方源，无需修改 Dockerfile：
+
+```bash
+docker compose --env-file ../config/compose.env build --pull \
+  --build-arg DEBIAN_MIRROR=https://deb.debian.org \
+  --build-arg NPM_REGISTRY=https://registry.npmjs.org
+```
+
+`DEBIAN_MIRROR` 填镜像根地址，不带末尾 `/`，同时保留原来的 `/debian` 与 `/debian-security` 路径。软件包镜像与 Docker Hub 镜像加速不是同一件事：Node、Nginx 基础镜像仍使用 Dockerfile 中的官方镜像。阿里云文档目前提示传统 ACR 镜像加速器已停止同步最新镜像，不能保证最新标签可用；需要时先核实账号专属地址及具体镜像，或使用受控 ACR 仓库，不套用未知公共代理，也不直接覆盖全局 Docker 配置或重启其他服务。参考：[Debian 镜像](https://developer.aliyun.com/mirror/debian)、[npm 镜像](https://developer.aliyun.com/mirror/NPM)、[ACR 官方镜像加速说明](https://help.aliyun.com/zh/acr/user-guide/accelerate-the-pulls-of-docker-official-images)。
+
 若内存不足、镜像拉取或依赖下载失败，应保留错误并处理资源/网络问题，不要拷贝 Windows 的 node_modules，不要关闭 TLS 校验。构建失败不会自动初始化或清空数据库。
 
 ### 6.2 只执行一次新库初始化
@@ -401,6 +415,7 @@ API 容器由 init 转发退出信号并关闭 SQLite。不要强杀未知进程
 开发机可以在项目根目录执行以下隔离检查；会新建 `.local/tests/docker-deployment-*` 测试目录，不访问现有业务库，也不调用真实 OSS/SMTP：
 
 ```text
+node --test deploy/test/build-config.test.mjs
 npm run build -w @online-video/shared
 npm run build -w @online-video/api
 node --test deploy/test/deployment.test.mjs

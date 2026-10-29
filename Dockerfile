@@ -7,16 +7,24 @@ FROM ${NODE_IMAGE} AS node-base
 WORKDIR /app
 
 FROM node-base AS manifests
+ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 # Native dependencies must be installed for Linux, not copied from Windows.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++
-RUN npm install --global npm@10.9.4
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && timeout 180s apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 \
+        -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+        -o APT::Update::Error-Mode=any update \
+    && timeout 600s apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 \
+        -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+        install -y --no-install-recommends python3 make g++
+RUN npm install --global npm@10.9.4 --registry="${NPM_REGISTRY}"
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 
 FROM manifests AS dependencies
-RUN npm ci --no-audit --no-fund
+RUN npm ci --registry="${NPM_REGISTRY}" --no-audit --no-fund
 
 FROM dependencies AS api-build
 COPY tsconfig.base.json ./
@@ -31,7 +39,7 @@ COPY apps/web ./apps/web
 RUN npm run build -w @online-video/shared && npm run build -w @online-video/web
 
 FROM manifests AS production-dependencies
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm ci --registry="${NPM_REGISTRY}" --omit=dev --no-audit --no-fund
 
 FROM node-base AS api
 ENV NODE_ENV=production API_HOST=0.0.0.0 API_PORT=3000
