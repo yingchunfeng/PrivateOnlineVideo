@@ -3,6 +3,7 @@ import { ApiClient, ApiError } from "./api/client";
 import { generateLocalCover } from "./cover";
 import type { LocalCover } from "./cover";
 import { completeTask, uploadFile, validateTask, validateUploadSize, verifyFile } from "./upload";
+import { TaskCompletionEffects } from "./space-enhancement-state";
 
 export type LocalTaskState = "prepared" | "creating" | "createFailed" | "queued" | "uploading" | "paused" | "verifying" | "confirming" | "savingCover" | "completed" | "failed";
 export interface PreparedVideo {
@@ -20,6 +21,7 @@ export function validateVideoFile(file: File, limits: ApplicationLimits) {
 
 /** 应用级执行器：路由卸载不影响它，退出登录才停止本机传输。 */
 export class UploadQueue {
+  readonly completionEffects = new TaskCompletionEffects();
   private entries: PreparedVideo[] = [];
   private listeners = new Set<() => void>();
   private transfer: { id: string; controller: AbortController } | undefined;
@@ -89,6 +91,7 @@ export class UploadQueue {
     this.update(entry.clientId, { state: "verifying", error: undefined, notice: "核对服务端已完成分片的 SHA-256…" });
     try {
       const task = entry.task;
+      const previousStatus = task.status;
       let result: { upload: UploadTask; video: VideoDetail };
       const full = task.uploadedParts.length === Math.ceil(task.sizeBytes / task.partSizeBytes);
       if (task.status === "completed" && task.videoId) result = { upload: task, video: await this.client.request<VideoDetail>(`/api/videos/${encodeURIComponent(task.videoId)}`, { signal: controller.signal }) };
@@ -97,6 +100,7 @@ export class UploadQueue {
         if (!entry.file) throw new ApiError("FILE_MISMATCH", "请重新选择原文件，经大小及已确认分片 SHA-256 校验后继续");
         result = await uploadFile(this.client, entry.file, task, controller.signal, value => this.update(entry.clientId, { task: value, state: value.status === "finalizing" ? "confirming" : "uploading", notice: value.status === "finalizing" ? "全部字节已上传，正在确认视频登记" : undefined }), part => this.update(entry.clientId, { notice: `已核对第 ${part} 个完成分片的 SHA-256` }));
       }
+      this.completionEffects.confirm(previousStatus, result.upload, result.video);
       this.update(entry.clientId, { task: result.upload, video: result.video, state: "completed", notice: "视频已登记并可播放", error: undefined });
       // 预览仍在解析时稍后由 previewNext 再唤醒，不以占位图冒充封面。
       const current = this.find(entry.clientId)!;

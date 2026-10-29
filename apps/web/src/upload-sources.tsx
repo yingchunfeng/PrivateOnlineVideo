@@ -39,7 +39,7 @@ export function UploadSources({ count, disabled, onFiles }: { count: number; dis
         setDragging(false);
         addFiles(Array.from(event.dataTransfer.files));
       }}>
-        <span className="radar-scanner-circle"><span className="radar-pulse-ring" /><span className="radar-pulse-ring delay" /><span className="radar-icon-center"><Icon name="cloud-upload" /></span></span>
+        <span className="radar-scanner-circle" aria-hidden="true"><span className="radar-pulse-ring" /><span className="radar-pulse-ring delay" /><span className="upload-orbit-satellite" /><span className="radar-icon-center"><Icon name="cloud-upload" /></span></span>
         <span className="radar-text-group"><strong className="upload-source-title">拖拽视频文件到这里</strong><span className="radar-subtext">或点击浏览文件 · 可多选</span><span className="radar-spec-note">已选 {count} 个文件</span></span>
       </button>
     </div>
@@ -50,7 +50,7 @@ export function UploadSources({ count, disabled, onFiles }: { count: number; dis
         addFolder(files);
       }} />
       <button type="button" className="radar-dropzone upload-source-trigger" aria-label="选择文件夹" disabled={disabled} onClick={() => folderInput.current?.click()}>
-        <span className="radar-scanner-circle"><span className="radar-pulse-ring" /><span className="radar-pulse-ring delay" /><span className="radar-icon-center"><Icon name="folder" /></span></span>
+        <span className="radar-scanner-circle" aria-hidden="true"><span className="radar-pulse-ring" /><span className="radar-pulse-ring delay" /><span className="upload-orbit-satellite" /><span className="radar-icon-center"><Icon name="folder" /></span></span>
         <span className="radar-text-group"><strong className="upload-source-title">选择文件夹</strong><span className="radar-subtext">包含子目录的视频自动加入列表</span><span className="radar-spec-note">仅加入视频，不会自动上传</span><span className="upload-source-note" role="status" aria-live="polite">{folderSummary || "支持 MP4 / MOV / WEBM / MKV / M4V"}</span></span>
       </button>
     </div>

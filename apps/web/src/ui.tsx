@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError } from "./api/client";
+import { SatelliteIllustration } from "./space-console";
 
 export function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
   const message = error instanceof Error ? error.message : "暂时无法加载内容";
   return <div className="notice error" role="alert"><strong>{message}</strong>{error instanceof ApiError && error.requestId && <small>请求编号：{error.requestId}</small>}{retry && <button className="secondary" onClick={retry}>重新加载</button>}</div>;
 }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
-  return <div className="empty"><Icon name="library" /><h2>{title}</h2>{children && <p>{children}</p>}</div>;
+  return <div className="empty"><SatelliteIllustration /><h2>{title}</h2>{children && <p>{children}</p>}</div>;
 }
 export function Loading() { return <div className="loading" role="status"><span className="spinner" />正在加载…</div>; }
 export function useLoad<T>(loader: () => Promise<T>, deps: unknown[] = []) {

@@ -49,6 +49,14 @@ async function verifyTheme(page: Page, theme: "light" | "dark") {
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), theme);
   assert.equal(await page.locator("body").evaluate(node => getComputedStyle(node).backgroundColor), theme === "light" ? "rgb(255, 255, 255)" : "rgb(8, 12, 20)");
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", theme === "light" ? "#ffffff" : "#080c14");
+  await expect(page.locator(".space-atmosphere")).toHaveCount(1);
+  await expect(page.locator(".space-atmosphere")).toHaveCSS("position", "fixed");
+  await expect(page.locator(".space-atmosphere")).toHaveCSS("pointer-events", "none");
+  await expect(page.locator(".orbit-chart")).toHaveCount(1);
+  await expect(page.locator(".space-atmosphere > .orbit-chart")).toBeVisible();
+  await expect(page.locator(".space-atmosphere .station-planet")).toHaveCount(1);
+  await expect(page.locator(".space-meteors-background")).toHaveCount(1);
+  await expect(page.locator(".space-meteors-foreground")).toHaveCount(1);
 }
 
 async function verifyWidth(page: Page) {
@@ -126,13 +134,21 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
         await expect(page.getByLabel("视频标题", { exact: true })).toHaveValue("未保存的主题检查");
         await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
         await page.goto(`${origin}/security`);
+        await page.emulateMedia({ reducedMotion: "no-preference" });
         await page.getByRole("button", { name: "撤销当前会话", exact: true }).click();
         await expect(page.getByRole("alertdialog")).toBeVisible();
+        await expect(page.locator(".space-meteors-foreground")).toHaveCSS("visibility", "hidden");
+        await expect(page.locator(".space-meteors-background")).toHaveCSS("visibility", "hidden");
         await expect(page.getByRole("alertdialog")).toBeInViewport();
         const dialogColor = await page.getByRole("alertdialog").evaluate(node => getComputedStyle(node).backgroundColor);
         assert.equal(dialogColor, theme === "light" ? "rgb(255, 255, 255)" : "rgb(15, 23, 42)");
         await page.screenshot({ path: `${evidence}/desktop-dialog-${theme}.png` });
         await page.getByRole("alertdialog").getByRole("button", { name: "取消", exact: true }).click();
+        await expect(page.locator(".space-meteors-foreground")).toHaveCSS("visibility", "visible");
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(`${origin}/shared-background-missing`);
+        await expect(page.getByRole("heading", { name: "页面不存在", exact: true })).toBeVisible();
+        await verifyTheme(page, theme);
       }
     });
 
@@ -179,6 +195,7 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
         await tab.getByRole("button", { name: "深色", exact: true }).click();
         await verifyTheme(tab, "dark");
         await verifyWidth(tab);
+        await tab.screenshot({ path: `${evidence}/${mode}-shared-background-dark.png`, fullPage: true });
         await isolated.close();
       }
     });

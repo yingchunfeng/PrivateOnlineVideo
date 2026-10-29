@@ -15,13 +15,18 @@ import { UploadQueueProvider } from "./upload-context";
 import { FeedbackProvider, useFeedback } from "./feedback";
 import { Icon, Empty, ErrorNotice } from "./ui";
 import { ThemeSwitcher } from "./theme-context";
+import { OrbitalMark, SpaceBackdrop, SpaceMeteors } from "./space-console";
+import { SpaceMotionToggle } from "./space-motion";
+import { PageEntrance, SideNavigationOrbit } from "./space-enhancements";
 
 export function App() {
   const [revision, setRevision] = useState(0);
   return (
     <>
+      <SpaceBackdrop />
+      <SpaceMeteors layer="foreground" />
       <a href="#main" className="skip">跳到内容</a>
-      <header className="theme-toolbar"><span>界面外观</span><ThemeSwitcher /></header>
+      <header className="theme-toolbar"><span>界面外观</span><div className="appearance-controls"><ThemeSwitcher /><SpaceMotionToggle /></div></header>
       <FeedbackProvider><SetupGate><AuthProvider key={revision}>
         <UploadQueueProvider><AppLayout revision={revision} setRevision={setRevision} /></UploadQueueProvider>
       </AuthProvider></SetupGate></FeedbackProvider>
@@ -43,7 +48,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           <div className="side-dock-brand">
             <NavLink className="side-logo-group" to="/">
               <div className="side-logo-symbol">
-                <Icon name="play" />
+                <OrbitalMark />
               </div>
               <div className="side-logo-text">
                 <span className="side-logo-title">云影匣</span>
@@ -53,6 +58,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           </div>
 
           <nav className="side-nav-menu" aria-label="系统主菜单">
+            <SideNavigationOrbit />
             <div className="side-nav-group-label">控制中心</div>
             <NavLink to="/" end className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="home" />
@@ -75,7 +81,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           </nav>
 
           {/* 左下角：存储空间仪表盘 HUD Widget */}
-          <div className="side-theme"><span>界面外观</span><ThemeSwitcher /></div>
+          <div className="side-theme"><span>界面外观</span><ThemeSwitcher /><SpaceMotionToggle /></div>
           <div className="side-storage-widget">
             <div className="storage-widget-header">
               <span className="storage-widget-title">媒体存储</span>
@@ -151,6 +157,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
         )}
 
         <main id="main">
+          <PageEntrance />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={protectedPage(<LibraryPage />)} />

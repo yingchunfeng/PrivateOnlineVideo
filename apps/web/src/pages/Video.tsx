@@ -90,7 +90,7 @@ export function VideoPage() {
             <strong>数据面板</strong>
             <small>DATA PANEL</small>
           </div>
-          <span className="sci-sys-info">SYS_INFO v2.0.8</span>
+          <span className="sci-sys-info">视频文件信息</span>
         </div>
 
         <div className="sci-data-grid">

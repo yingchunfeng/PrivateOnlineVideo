@@ -9,6 +9,8 @@ import { PublicAddress } from "../public-address";
 import { useUploadQueue } from "../upload-context";
 import type { LocalTaskState, PreparedVideo } from "../upload-queue";
 import { bytes, date, Empty, ErrorNotice, Icon, Loading, useLoad } from "../ui";
+import { TransferOrbit } from "../space-console";
+import { TaskCompletionHalo } from "../space-enhancements";
 
 const localLabels: Record<LocalTaskState, string> = { prepared: "待提交", creating: "正在创建任务", createFailed: "任务创建失败", queued: "排队等待", uploading: "正在上传", verifying: "正在校验原文件", paused: "本机已暂停", confirming: "字节已传完，正在确认视频登记", savingCover: "视频已登记，正在保存封面", completed: "视频已登记", failed: "执行失败，可核对后重试" };
 const serverLabels = { uploading: "待上传 / 可续传", finalizing: "字节已传完，服务端确认中", completed: "视频已登记", failed: "服务端失败，可重试" };
@@ -44,7 +46,7 @@ function TaskCard({ task: initial, entry, categoryName, onUpdated, library }: { 
   const coverSaved = entry?.video?.coverStatus === "saved" || task.coverStatus === "saved";
   return <article className="panel stack upload-task-card" data-task-id={task.id}>
     <div className="task-card-head">{!imageFailed && (imageUrl || entry?.cover?.url) ? <img className="task-cover-image" src={imageUrl ?? entry?.cover?.url} alt={`${entry?.title ?? task.title ?? task.fileName}的封面`} onError={() => setImageFailed(true)} /> : <div className="task-cover-image placeholder"><Icon name="play" /><small>暂无封面</small></div>}<div><h3>{entry?.title ?? task.title ?? task.fileName}</h3><small>{task.fileName} · {bytes(task.sizeBytes)} · {categoryName ?? "历史分类"}</small><TagBadges tags={entry?.tags ?? task.tags ?? []} /><small>{date(task.createdAt)}</small></div></div>
-    <div className="progress-info-row"><strong role="status">{entry ? localLabels[entry.state] : serverLabels[task.status]}</strong><span>{Math.min(100, Math.floor(uploaded / task.sizeBytes * 100))}%</span></div><div className="neon-progress-bar"><div className="neon-progress-fill" style={{ width: `${Math.min(100, uploaded / task.sizeBytes * 100)}%` }} /></div><small>{bytes(uploaded)} / {bytes(task.sizeBytes)} 已确认字节{full && !completed ? "；尚未确认视频登记" : ""}</small>
+    <div className="transfer-meter"><TransferOrbit uploaded={uploaded} total={task.sizeBytes} /><TaskCompletionHalo effects={queue.completionEffects} taskId={task.id} /><div><div className="progress-info-row"><strong role="status">{entry ? localLabels[entry.state] : serverLabels[task.status]}</strong><span>{Math.min(100, Math.floor(uploaded / task.sizeBytes * 100))}%</span></div><div className="neon-progress-bar"><div className="neon-progress-fill" style={{ width: `${Math.min(100, uploaded / task.sizeBytes * 100)}%` }} /></div><small>{bytes(uploaded)} / {bytes(task.sizeBytes)} 已确认字节{full && !completed ? "；尚未确认视频登记" : ""}</small></div></div>
     {entry?.notice && <small role="status">{entry.notice}</small>}
     {completed && <div className={`notice ${coverSaved ? "completed-sci-notice" : "warning"}`} role="status"><strong>{coverSaved ? "视频已登记，封面已保存" : "视频已登记，封面待补"}</strong><p>{coverSaved ? "视频和封面均已由后端确认。" : "视频可直接播放，封面失败或未采集不会阻断播放。"}</p>{task.videoId && <Link className="button" to={`/videos/${encodeURIComponent(task.videoId)}`}>播放视频</Link>}{publicUrl && <PublicAddress publicUrl={publicUrl} library={library} />}</div>}
     {entry?.error !== undefined && <ErrorNotice error={entry.error} />}{error !== undefined && <ErrorNotice error={error} />}{task.errorCode && !entry?.error && <small className="state-text failed">服务端错误：{task.errorCode}</small>}

@@ -1,0 +1,32 @@
+.space-meteors[data-scheduled] .space-meteor { display: block; animation: none; }
+:root[data-space-motion="on"] .space-meteors[data-scheduled] .space-meteor {
+  animation: space-meteor-pass var(--meteor-duration) linear 0s 1 both;
+  animation-play-state: var(--space-play-state);
+}
+.space-meteors[data-scheduled] .meteor-body { position: absolute; inset: 0; transform: scale(var(--meteor-size)); transform-origin: 0 0; }
+.space-meteors[data-scheduled] .meteor-streak { width: calc(clamp(100px, 15vw, 220px) * var(--meteor-tail-scale)); height: 1.7px; top: -.85px; }
+.space-meteors[data-scheduled] .meteor-streak::after { opacity: calc(.24 * var(--meteor-glow)); }
+.space-meteors[data-scheduled] .meteor-head {
+  left: -1.8px; top: -1.8px; width: 3.6px; height: 3.6px;
+  box-shadow: 0 0 calc(5px * var(--meteor-glow)) var(--meteor-color), 0 0 calc(13px * var(--meteor-glow)) var(--meteor-tail);
+}
+.space-meteors[data-scheduled] .meteor-dust { opacity: calc(.23 * var(--meteor-glow)); }
+.space-meteors-foreground[data-scheduled] .meteor-streak { width: calc(clamp(90px, 12vw, 180px) * var(--meteor-tail-scale)); }
+:root[data-space-meteor-blocked="true"] .space-meteors[data-scheduled],
+:root[data-space-meteor-input="true"] .space-meteors-foreground[data-scheduled] { visibility: hidden; }
+:root[data-space-meteor-input="true"] .space-meteors-foreground[data-scheduled] .space-meteor { animation-play-state: paused; }
+@keyframes space-meteor-pass {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  8% { opacity: var(--meteor-peak); }
+  76% { opacity: var(--meteor-peak); }
+  100% { transform: translate3d(var(--meteor-dx), var(--meteor-dy), 0); opacity: 0; }
+}
+@media (max-width: 600px) {
+  .space-meteors-background[data-scheduled] .space-meteor { display: block; }
+  .space-meteors[data-scheduled] .meteor-streak { width: calc(95px * var(--meteor-tail-scale)); }
+  .space-meteors[data-scheduled] .meteor-dust { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .space-meteors[data-scheduled] { visibility: hidden !important; }
+  :root[data-space-motion="on"] .space-meteors[data-scheduled] .space-meteor { animation: none; }
+}
