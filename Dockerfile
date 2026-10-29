@@ -9,14 +9,23 @@ WORKDIR /app
 FROM node-base AS manifests
 ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+# Bootstrap APT's HTTPS trust from Node's bundled CAs without replacing an existing bundle.
+RUN node -e 'const fs = require("node:fs"); \
+    const path = "/etc/ssl/certs/ca-certificates.crt"; \
+    if (!fs.existsSync(path)) { \
+        fs.mkdirSync("/etc/ssl/certs", { recursive: true }); \
+        fs.writeFileSync(path, require("node:tls").rootCertificates.join("\n") + "\n", { flag: "wx", mode: 0o644 }); \
+    }'
 # Native dependencies must be installed for Linux, not copied from Windows.
 RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && timeout 180s apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 \
         -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+        -o Acquire::https::CAInfo=/etc/ssl/certs/ca-certificates.crt \
         -o APT::Update::Error-Mode=any update \
     && timeout 600s apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 \
         -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
-        install -y --no-install-recommends python3 make g++
+        -o Acquire::https::CAInfo=/etc/ssl/certs/ca-certificates.crt \
+        install -y --no-install-recommends ca-certificates python3 make g++
 RUN npm install --global npm@10.9.4 --registry="${NPM_REGISTRY}"
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json

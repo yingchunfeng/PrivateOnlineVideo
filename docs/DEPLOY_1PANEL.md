@@ -221,6 +221,8 @@ docker compose --env-file ../config/compose.env build --pull
 
 构建默认优先使用阿里云 Debian 镜像 `https://mirrors.aliyun.com` 和阿里云镜像站列出的 npm 镜像 `https://registry.npmmirror.com`。仅替换镜像内的 APT 下载地址和 npm 构建命令，不修改宿主机软件源、本地 `.npmrc`、锁文件或数据库；APT 的 Debian 签名校验和 npm 的完整性校验保持启用。npm 包安装脚本另行访问的 GitHub 等地址不保证被加速。
 
+精简 Node 镜像可能没有系统 CA 证书包。构建会在缺少系统证书文件时，用 Node 官方镜像内置的 Mozilla 根证书创建引导信任包；已有系统证书文件不会覆盖。APT 全程通过 HTTPS 校验证书，随后安装 Debian 的 `ca-certificates` 包。若日志出现 `No system certificates available`，应检查是否已拉取包含该引导步骤的 Dockerfile，不要用关闭证书校验或 `trusted=yes` 的方式绕过。参考：[Node.js 内置根证书](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates)、[Debian HTTPS 传输说明](https://manpages.debian.org/bookworm/apt/apt-transport-https.1.en.html)。
+
 APT 构建步骤使用 IPv4，索引更新最多 180 秒，依赖安装最多 600 秒，并设置网络超时及有限重试。这个限制不涵盖 Docker 基础镜像元数据查询、镜像拉取、npm 安装或项目编译；它们仍可能单独耗时。
 
 如果目标服务器访问这些镜像不稳定，可通过构建参数显式切回官方源，无需修改 Dockerfile：
