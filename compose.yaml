@@ -1,0 +1,74 @@
+name: online-video
+
+services:
+  api:
+    image: online-video-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: api
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: "3000"
+      AUTH_ALLOWED_ORIGINS: ${APP_ORIGIN:?Set APP_ORIGIN to the public HTTPS origin}
+    volumes:
+      - type: bind
+        source: ${DATA_DIR:-../data}
+        target: /app/.local/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DEPLOY_CONFIG_FILE:-../config/deployment.json}
+        target: /app/config/deployment.json
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health', {signal: AbortSignal.timeout(4000)}).then(async r => {if (!r.ok || (await r.json()).data?.status !== 'ok') process.exit(1)}).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  web:
+    image: online-video-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-18080}:8080"
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -267,6 +267,7 @@ npm run start:setup -w @online-video/api -- --database ".local/data/new-install.
 
 ## 开发文档
 
+- [Docker 镜像部署与 1Panel 反向代理](docs/DEPLOY_1PANEL.md)
 - [新部署完整 SQL 与网页初始化](docs/NEW_INSTALL.md)
 - [数据库配置、切库与共享主密钥](docs/DATABASE_SWITCHING.md)
 - [当前未完成工作与已确认完成记录](docs/task/UNFINISHED_WORK.md)

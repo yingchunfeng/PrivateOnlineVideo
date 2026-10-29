@@ -1,0 +1,13 @@
+# Optional: connect only Web to the existing bridge network of 1Panel OpenResty.
+services:
+  web:
+    networks:
+      default: {}
+      panel:
+        aliases:
+          - online-video-web
+
+networks:
+  panel:
+    external: true
+    name: ${PANEL_NETWORK:?Set PANEL_NETWORK to the existing OpenResty bridge network}
