@@ -7,7 +7,7 @@
 日期：2026-10-01  
 任务：CORE-01 已完成，本轮没有进入 CORE-02～06、MEDIA 或 WEB 开发。  
 当前业务能力：仅 `GET /api/health`；其余路由只有类型/接入约定，不能视为已实现。  
-接口依据：[API_CONTRACT.md](../API_CONTRACT.md)，任务回写：[01-backend.md](.ai/demand/01-backend.md)。
+接口依据：[API_CONTRACT.md](../API_CONTRACT.md)；原 `01-backend.md` 任务板已于 2026-10-30 按确认范围清理，本交付记录保留。
 
 ## 1. 实际目录和包
 

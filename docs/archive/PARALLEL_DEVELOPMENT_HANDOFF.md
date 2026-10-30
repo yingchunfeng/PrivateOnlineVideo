@@ -12,8 +12,8 @@
 
 | 交付 | 入口与详细说明 |
 | --- | --- |
-| MEDIA-01～07 媒体模块 | [模块入口](../../apps/api/src/modules/media/index.ts)、[媒体交接](../../apps/api/src/modules/media/HANDOFF.md)、[媒体任务板](.ai/demand/02-media.md) |
-| WEB-01～07 安卓优先网站 | [前端运行说明](../../apps/web/README.md)、[前端交接](../../apps/web/HANDOFF.md)、[前端任务板](.ai/demand/03-frontend.md) |
+| MEDIA-01～07 媒体模块 | [模块入口](../../apps/api/src/modules/media/index.ts)、[媒体交接](../../apps/api/src/modules/media/HANDOFF.md)；原媒体任务板已于 2026-10-30 按确认范围清理 |
+| WEB-01～07 安卓优先网站 | [前端运行说明](../../apps/web/README.md)、[前端交接](../../apps/web/HANDOFF.md)；原前端任务板已于 2026-10-30 按确认范围清理 |
 | 当前公共契约 | [API_CONTRACT V0.3](../API_CONTRACT.md)、[共享 DTO](../../packages/shared/src/dto.ts)、[服务端接口](../../apps/api/src/core/contracts/index.ts) |
 | 工程基线 | [CORE-01 交接](CORE01_HANDOFF.md)，记录的是本轮之前的骨架验证；当前运行命令和依赖以本交接及 package.json 为准 |
 

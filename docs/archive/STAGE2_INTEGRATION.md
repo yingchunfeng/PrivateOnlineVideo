@@ -4,7 +4,7 @@
 
 > **历史归档（2026-10-26）**：原位置 `docs/STAGE2_INTEGRATION.md`。以下保留历史设计与完成记录，不作为当前任务指令；当前工作见[未完成工作清单](../task/UNFINISHED_WORK.md)，归档范围见[归档索引](README.md)。
 
-日期：2026-10-02。阶段依据：[STAGE2](task/STAGE2.md)、[本地 OSS 准备](OSS_LOCAL_TEST_PLAN.md)。
+日期：2026-10-02。原 STAGE2 阶段计划及本地 OSS 准备计划已于 2026-10-30 按确认范围清理；交付结果仍见[完成审计](STAGE2_COMPLETION_AUDIT.md)。
 
 最新结论：第二阶段代码、授权正式迁移和本机真实STS/OSS完整链已验；三个任务板收尾事实以[完成审计](STAGE2_COMPLETION_AUDIT.md)为准。以下保留实施过程记录，较早的TODO/待授权/临时配置不代表当前状态。网站HTTPS/安卓/杭州内网及附加fetch CORS场景准确留第三阶段。
 
@@ -32,7 +32,7 @@
 
 用户已确认单文件上限 2GB（本轮明确按 2 × 1024³ = 2147483648 字节）、最多3个应用播放会话、`Asia/Shanghai`、签名最长3600秒并提前300秒刷新，其余参数授权由开发决定。采用8 MiB分片、最多2片并发上传、每账号每分钟12次源/下载签名授权；一般媒体请求120次/分钟、应用会话120秒（心跳续期）、导入预览10分钟且最多16份。签名实际期限仍取STS剩余期限减30秒安全余量，较短期限按后端真实 `renewAfter` 刷新。测试值只用于隔离测试。真实 `.env` 不进入 Git，也不覆盖已有配置。
 
-启动与调试说明见 [LOCAL_DEVELOPMENT](../LOCAL_DEVELOPMENT.md)。后续实际检查结果和任务映射由主控在本页与 [TASKS](task/TASKS.md) 回写。
+启动与调试说明见 [LOCAL_DEVELOPMENT](../LOCAL_DEVELOPMENT.md)。当时的检查结果保留在本页；旧 TASKS 总看板已清理，当前任务状态统一见[工作清单](../task/UNFINISHED_WORK.md)。
 
 ## 正式库副本验证
 

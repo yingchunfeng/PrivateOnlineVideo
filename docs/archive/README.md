@@ -1,41 +1,39 @@
 # 历史文档归档
 
-整理日期：2026-10-26。用户已确认采用方案 A：归档旧阶段文档、修正引用，并清理限定范围内的历史测试产物。
+更新日期：2026-10-30。2026-10-26 曾归档旧阶段文档；本次用户确认精确清单后，删除旧规划和限定范围内的重复测试产物，保留仍有追溯价值的交付与验收记录。
 
 **当前工作入口：[未完成工作清单与已确认完成记录](../task/UNFINISHED_WORK.md)。** 本目录仅用于查阅历史设计、任务分工和验收过程；其中旧 TODO、执行提示词、迁移及云操作授权不代表当前任务或新的操作授权。
 
-## 1. 已归档的 24 份文档
+## 1. 当前保留的 7 份历史交接与验收文档
 
-原 `docs/` 下的历史文档移入本目录，原 `docs/task/` 文件保留 `task/` 子目录。原 `.ai/demand/` 的 9 份本地任务板移入本目录的 `.ai/demand/`，沿用既有 `.ai/` 忽略规则，不改变其仅本地保存的边界；新克隆环境可能没有这些文件。
-
-### 阶段规划与总看板（原 `docs/task/`）
-
-- [旧总任务看板](task/TASKS.md)
-- [CORE-01 规划](task/CORE-01.md)
-- [第二阶段计划](task/STAGE2.md)
-- [第二阶段架构评审](task/STAGE2_ARCHITECTURE_REVIEW.md)
-- [第三阶段旧计划](task/STAGE3.md)
-- [OSS 与框架调整历史](task/OSS和框架调整相关.md)
-
-### 交接与验收（原 `docs/`）
+以下保留的是当时的交付或验收事实，不是当前运行方案；最新功能和部署以[项目说明](../../README.md)、[部署指南](../DEPLOY_1PANEL.md)为准。
 
 - [CORE-01 交接](CORE01_HANDOFF.md)
 - [并行开发交接](PARALLEL_DEVELOPMENT_HANDOFF.md)
-- [旧 OSS 本地验收计划](OSS_LOCAL_TEST_PLAN.md)
 - [第二阶段 API 契约](STAGE2_API_CONTRACT.md)
 - [第二阶段后端交接](STAGE2_BACKEND_HANDOFF.md)
 - [第二阶段实云验收计划](STAGE2_CLOUD_ACCEPTANCE_PLAN.md)
 - [第二阶段完成审计](STAGE2_COMPLETION_AUDIT.md)
 - [第二阶段联调记录](STAGE2_INTEGRATION.md)
-- [第二阶段运行操作计划](STAGE2_OPERATIONS_PLAN.md)
 
-### 本地代理任务板（原 `.ai/demand/`）
+原 `docs/archive/task/` 下 6 份阶段规划、归档的 9 份本地代理任务板、原 `docs/PRD.md`、旧 OSS 本地验收计划及第二阶段运行操作计划，共 18 份 Markdown 已按本次确认清理。任务板没有转移到其他活动入口，不继续按旧卡执行。
 
-- 第一阶段：[后端](.ai/demand/01-backend.md)、[媒体](.ai/demand/02-media.md)、[前端](.ai/demand/03-frontend.md)
-- 第二阶段：[后端](.ai/demand/stage2/01-backend.md)、[媒体](.ai/demand/stage2/02-media.md)、[前端](.ai/demand/stage2/03-frontend.md)
-- 第三阶段：[部署](.ai/demand/stage3/01-deployment.md)、[OSS 运维](.ai/demand/stage3/02-oss-operations.md)、[安卓验收](.ai/demand/stage3/03-acceptance.md)
+## 2. 清理记录
 
-## 2. 本次测试产物清理记录
+### 2026-10-30：精确清单清理
+
+| 类型 | 实际删除文件数 | 释放空间 |
+| --- | --- | --- |
+| 旧规划和任务板 Markdown | 18 | 0.24 MiB |
+| 隔离测试数据库及派生产物 | 200 | 21.24 MiB |
+| 未被现有文档引用的重复界面测试截图和报告 | 529 | 246.44 MiB |
+| 合计 | 747 | 267.93 MiB |
+
+按路径、大小、修改时间和 SHA-256 逐项复核后，仅删除批准清单中的文件，并以非递归方式移除 114 个已经为空的测试输出目录。无占用跳过项、无剩余目标，没有终止任何进程、操作服务器或写入业务数据库。删除后、修正文档引用前，775 份保留文件哈希核对一致；后续仅修正相关 Markdown 引用及状态说明。
+
+本地记录保存在 `.local/cleanup-review/`：批准清单为 `proposal-20261030-ea2a0677.json`，执行结果为 `cleanup-result-ea2a0677-191f8b88c55749c2b5fe6ec01bb96128.jsonl`，保留文件快照为 `protected-ea2a0677-191f8b88c55749c2b5fe6ec01bb96128.json`。这些记录不进入 Git，也不授权删除今后重新生成的文件。
+
+### 2026-10-26：历史清理
 
 | 原位置 | 实际清理范围 | 结果 |
 | --- | --- | --- |
@@ -49,7 +47,7 @@
 ## 3. 保留范围与兼容说明
 
 - 正式数据库、密钥、账号/恢复资料、数据库备份、`.env`、当前配置及 30 份配置备份均保留。
-- `.local/tests/`、`.local/acceptance/`、固定视频样例、`.local/tools/`、根目录 `sqlite-test.db`、缓存与构建产物均未清理。
+- `.local/tests/` 和 `.local/acceptance/` 只清理本次批准的具体文件，不整目录清空。固定视频样例、封面样例、长视频 fixture、最新具名验收证据、实云授权记录、`.local/tools/`、已有手工测试库、缓存与构建产物均保留。
 - 业务源码、测试源码、包脚本、锁文件、数据库迁移和 `docs/sql/` 中的 SQL 均未修改；仅相关 Markdown 链接随文档归档调整。
 - `permission-probe.ts` 中的 `docs/STAGE2_CLOUD_ACCEPTANCE_PLAN.md` 是旧授权记录的精确身份标识，不是运行时读取文档的路径。因此该字符串和已有授权 JSON 保持原样，不因归档改写。
 - 归档文档内代码块、普通文本中的旧工程路径可作为历史记录保留；实际查阅位置以本索引和已修正的 Markdown 链接为准。
