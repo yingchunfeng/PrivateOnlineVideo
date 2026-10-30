@@ -23,7 +23,10 @@ export type AssumeRole = (input: { roleArn: string; policy: string; durationSeco
 /** 会话权限是已有角色权限的交集；本模块不创建角色或修改云端策略。 */
 export function sessionPolicy(bucket: string, prefix: string, purpose: OssCredentialPurpose): string {
   const object = `acs:oss:*:*:${bucket}/${prefix}*`;
-  const Statement: object[] = [{ Effect: "Allow", Action: purpose === "upload" ? ["oss:GetObject", "oss:PutObject"] : ["oss:GetObject"], Resource: [object] }];
+  // 已核验对象按 versionId 读取；角色与会话策略都必须允许版本读取。
+  const actions = purpose === "upload" ? ["oss:GetObject", "oss:PutObject"]
+    : purpose === "read" ? ["oss:GetObject", "oss:GetObjectVersion"] : ["oss:GetObject"];
+  const Statement: object[] = [{ Effect: "Allow", Action: actions, Resource: [object] }];
   if (purpose === "import") Statement.push({ Effect: "Allow", Action: ["oss:ListObjects"],
     Resource: [`acs:oss:*:*:${bucket}`], Condition: { StringLike: { "oss:Prefix": [`${prefix}*`] } } });
   return JSON.stringify({ Version: "1", Statement });

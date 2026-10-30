@@ -23,6 +23,23 @@ import { createRepositories } from "../src/db/repositories.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+test("STS 会话最小权限：只读用途包含版本读取，上传和导入不扩权", () => {
+  for (const prefix of ["onlineVideo/", "onlineVideo/nested/"]) {
+    const resource = [`acs:oss:*:*:xzlbucket/${prefix}*`];
+    assert.deepEqual(JSON.parse(sessionPolicy("xzlbucket", prefix, "read")), { Version: "1", Statement: [
+      { Effect: "Allow", Action: ["oss:GetObject", "oss:GetObjectVersion"], Resource: resource }
+    ] });
+    assert.deepEqual(JSON.parse(sessionPolicy("xzlbucket", prefix, "upload")), { Version: "1", Statement: [
+      { Effect: "Allow", Action: ["oss:GetObject", "oss:PutObject"], Resource: resource }
+    ] });
+    assert.deepEqual(JSON.parse(sessionPolicy("xzlbucket", prefix, "import")), { Version: "1", Statement: [
+      { Effect: "Allow", Action: ["oss:GetObject"], Resource: resource },
+      { Effect: "Allow", Action: ["oss:ListObjects"], Resource: ["acs:oss:*:*:xzlbucket"],
+        Condition: { StringLike: { "oss:Prefix": [`${prefix}*`] } } }
+    ] });
+  }
+});
+
 test("STS 用途隔离、并发合并、Expiration 提前刷新与失败关闭；无真实密钥/网络", async () => {
   let now = Date.parse("2026-10-02T10:00:00Z"); let calls = 0; let fail = false;
   const purposes: string[] = [];
@@ -62,7 +79,7 @@ test("STS 等待者取消不影响另一等待者；拒绝已过期和无Token�
   }
 });
 
-test("ali-oss STS SDK 仅连接本地协议服务，读取策略只有 GetObject", async t => {
+test("ali-oss STS SDK 仅连接本地协议服务，读取策略限定普通及版本读取", async t => {
   let requests = 0;
   const server = createServer(async (request, response) => {
     requests++; let body = ""; for await (const chunk of request) body += String(chunk);
@@ -70,7 +87,7 @@ test("ali-oss STS SDK 仅连接本地协议服务，读取策略只有 GetObject
     assert.equal(form.get("Action"), "AssumeRole"); assert.equal(form.get("DurationSeconds"), "3600");
     assert.equal(form.get("RoleSessionName"), "onlineVideo-read"); assert.ok(form.get("Signature"));
     const policy = JSON.parse(form.get("Policy")!);
-    assert.deepEqual(policy.Statement[0].Action, ["oss:GetObject"]);
+    assert.deepEqual(policy.Statement[0].Action, ["oss:GetObject", "oss:GetObjectVersion"]);
     assert.deepEqual(policy.Statement[0].Resource, ["acs:oss:*:*:xzlbucket/onlineVideo/*"]);
     response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ Credentials: {
       AccessKeyId: "fake-local-sts", AccessKeySecret: "fake-secret", SecurityToken: "fake-token",

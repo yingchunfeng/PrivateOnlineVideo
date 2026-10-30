@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import type { Readable } from "node:stream";
+import { Readable } from "node:stream";
 import Fastify from "fastify";
 import OSS from "ali-oss";
 import type { SaveOssSettingsRequest } from "@online-video/shared";
@@ -150,6 +150,89 @@ test("新部署真实存储工厂遇NoSuchKey可合并上传并恢复失败任�
       assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 3);
     } finally { await app.close(); }
   });
+});
+
+test("新部署版本对象登记失败后可重试：角色与读取会话均需版本权限，不重复上传；仅内存库和SDK替身", async t => {
+  const content = Buffer.from("isolated-versioned-upload"); const checksum = createHash("sha256").update(content).digest("hex");
+  const versionId = "isolated-version-id"; const key = randomBytes(32);
+  let roleAllowsVersionRead = false; let readActions: string[] = [];
+  let completedKey: string | undefined; let merges = 0; let uploads = 0; let versionHeads = 0; let versionReads = 0; let roleRequests = 0;
+  t.mock.method(OSS.STS.prototype, "assumeRole", async (_arn: string, policy: string, _duration: number, sessionName: string) => {
+    roleRequests++;
+    if (sessionName === "onlineVideo-read") readActions = JSON.parse(policy).Statement[0].Action;
+    return { credentials: { AccessKeyId: "temporary-key", AccessKeySecret: "temporary-secret", SecurityToken: "temporary-token",
+      Expiration: new Date(Date.now() + 3600_000).toISOString() } };
+  });
+  const requireVersionRead = () => {
+    if (!roleAllowsVersionRead || !readActions.includes("oss:GetObjectVersion")) {
+      throw Object.assign(new Error("isolated version read denied"), { status: 403, code: "AccessDenied" });
+    }
+  };
+  t.mock.method(OSS.prototype, "initMultipartUpload", async () => ({ uploadId: "isolated-upload-id" }));
+  t.mock.method(OSS.prototype, "uploadPart", async (_key: string, _uploadId: string, _partNumber: number, stream: Readable) => {
+    uploads++; const chunks: Buffer[] = []; for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    assert.deepEqual(Buffer.concat(chunks), content); return { etag: "isolated-part-etag" };
+  });
+  const objectHeaders = { "content-length": content.length, etag: "isolated-object-etag", "content-type": "video/mp4", "x-oss-version-id": versionId };
+  t.mock.method(OSS.prototype, "head", async (objectKey: string, headOptions?: { versionId?: string }) => {
+    if (objectKey !== completedKey) throw Object.assign(new Error("Object not exists"), { code: "NoSuchKey", status: 404 });
+    if (headOptions?.versionId) {
+      versionHeads++; assert.equal(headOptions.versionId, versionId); requireVersionRead();
+    }
+    return { res: { headers: objectHeaders } };
+  });
+  t.mock.method(OSS.prototype, "getStream", async (objectKey: string, readOptions: { subres?: { versionId: string } }) => {
+    versionReads++; assert.equal(objectKey, completedKey); assert.equal(readOptions.subres?.versionId, versionId); requireVersionRead();
+    return { stream: Readable.from([content]), res: { headers: objectHeaders } };
+  });
+  t.mock.method(OSS.prototype, "completeMultipartUpload", async (objectKey: string, _uploadId: string, parts: { number: number; etag: string }[]) => {
+    assert.equal(completedKey, undefined); assert.deepEqual(parts, [{ number: 1, etag: "isolated-part-etag" }]);
+    completedKey = objectKey; merges++; return { res: { headers: {} } };
+  });
+  const config = readConfig({ NODE_ENV: "test", STORAGE_DRIVER: "oss", OSS_BUCKET: input.bucket, OSS_REGION: input.region,
+    OSS_ENDPOINT: "https://oss-cn-hangzhou.aliyuncs.com", OSS_NETWORK: "public", OSS_ALLOW_PUBLIC_NETWORK: "true",
+    OSS_CREDENTIAL_FILE: resolve(WORKSPACE_ROOT, ".local/isolated-not-read.json"), MAX_UPLOAD_BYTES: "1048576", UPLOAD_PART_SIZE_BYTES: "131072",
+    MAX_UPLOAD_CONCURRENCY: "2", MEDIA_REQUESTS_PER_MINUTE: "120" });
+  config.library = { mediaBaseUrl: input.mediaBaseUrl, objectPrefix: input.objectPrefix, categories: [{ id: "category", name: "隔离分类", tags: [] }] };
+  const fake = fakeDependencies(config); const database = openDatabase(":memory:", { initialize: true });
+  t.after(() => database.close());
+  database.client.prepare("INSERT INTO users(id,display_name,password_hash,totp_cipher,created_at) VALUES(?,?,?,?,?)")
+    .run("owner", "isolated", "test", "test", fake.clock.time.toISOString());
+  const service = new InstallationSettingsService(database, key, { isReady: () => false }); service.saveOss({ ...input, roleArn });
+  const repositories = createRepositories(database, () => fake.clock.time, config.library);
+  const dependencies = { ...fake.dependencies, ...repositories, storage: service.createStorage() };
+  const registration = createMediaModule({ ...options, objectPrefix: input.objectPrefix, metadata: { inspect: async ({ storage, object, signal }) => {
+    const result = await storage.openRead({ object, signal }); const chunks: Buffer[] = [];
+    for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
+    assert.deepEqual(Buffer.concat(chunks), content);
+    return options.metadata.inspect({ storage, object, signal });
+  } } });
+  const app = await buildApp({ config, logger: false, media: { register: registration, dependencies } });
+  t.after(() => app.close());
+  const created = await app.inject({ method: "POST", url: "/api/uploads", headers,
+    payload: { fileName: "versioned.mp4", title: "isolated", categoryId: "category", sizeBytes: content.length } });
+  assert.equal(created.statusCode, 200, created.body); const id = created.json().data.id;
+  const part = await app.inject({ method: "PUT", url: `/api/uploads/${id}/parts/1`,
+    headers: { ...headers, "content-type": "application/octet-stream", "x-part-checksum": checksum }, payload: content });
+  assert.equal(part.statusCode, 200, part.body);
+  const complete = () => app.inject({ method: "POST", url: `/api/uploads/${id}/complete`, headers, payload: {} });
+  const failed = await complete();
+  assert.equal(failed.statusCode, 503, failed.body); assert.equal(failed.json().error.code, "UPLOAD_REGISTRATION_FAILED");
+  const saved = (await repositories.uploads.findOwned("owner", id))!;
+  assert.equal(saved.task.status, "failed"); assert.equal(saved.object.kind, "registered");
+  if (saved.object.kind !== "registered") assert.fail("expected registered object");
+  assert.equal(saved.object.versionId, versionId); assert.equal(saved.object.verificationStatus, "verified"); assert.equal(saved.parts.length, 1);
+  assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 0);
+  // 恢复角色权限并创建新的凭据缓存，模拟更新 API 后继续同一数据库中的失败任务。
+  roleAllowsVersionRead = true;
+  dependencies.storage = new InstallationSettingsService(database, key, { isReady: () => false }).createStorage();
+  const recovered = await complete();
+  assert.equal(recovered.statusCode, 200, recovered.body); assert.equal(recovered.json().data.upload.status, "completed");
+  const again = await complete(); assert.equal(again.statusCode, 200, again.body);
+  assert.equal(again.json().data.video.id, recovered.json().data.video.id);
+  assert.equal((await repositories.uploads.findOwned("owner", id))!.parts.length, 1);
+  assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 1);
+  assert.equal(merges, 1); assert.equal(uploads, 1); assert.equal(roleRequests, 3); assert.equal(versionReads, 1); assert.ok(versionHeads >= 4);
 });
 
 test("配置测试HTTP保留SDK安全分类，STS失败不回退AK；失败不标记检查通过", async t => {
