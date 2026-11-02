@@ -53,9 +53,9 @@ function VideoEditorForm({ video, library, onClose, onSaved, onDeleted }: {
       </select></label></div>
       <TagChoice items={availableTags} selected={tags} onChange={setTags} disabled={busy} />
       <small>切换分类时仅保留该分类可用的标签；历史标签可保留或取消。</small>
-      <div className="video-editor-cover">{(coverPreview || existingCover) && <img src={coverPreview ?? existingCover} alt="待保存视频封面" />}<div className="stack"><label>替换封面（JPEG，最大 1 MiB）<input type="file" accept="image/jpeg,.jpg,.jpeg" disabled={busy} onChange={event => {
+      <div className="video-editor-cover">{(coverPreview || existingCover) && <img src={coverPreview ?? existingCover} alt="待保存视频封面" />}<div className="stack"><label>替换封面（JPEG，最大 2 MiB）<input type="file" accept="image/jpeg,.jpg,.jpeg" disabled={busy} onChange={event => {
         const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
-        if (file.type !== "image/jpeg" || file.size <= 0 || file.size > 1048576) { setError(new Error("封面必须为不超过 1 MiB 的 JPEG 图片，原封面已保留")); return; }
+        if (file.type !== "image/jpeg" || file.size <= 0 || file.size > 2097152) { setError(new Error("封面必须为不超过 2 MiB 的 JPEG 图片，原封面已保留")); return; }
         setCover(file); setError(undefined);
       }} /></label>{cover && <><small>{cover.name}，保存后才替换数据库封面引用。</small><button className="secondary" type="button" disabled={busy} onClick={() => setCover(undefined)}>取消本次封面替换</button></>}</div></div>
       </fieldset>
