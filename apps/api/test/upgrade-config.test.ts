@@ -83,7 +83,9 @@ test("隔离HTTP配置成功立即联动library，旧管理接口同源；非法
     const initial = (await app.inject({ method: "GET", url: "/api/library/configuration" })).json().data as LibraryConfiguration;
     const created = await app.inject({ method: "POST", url: "/api/categories", payload: { name: "立即显示", version: initial.version, sortOrder: 0 } });
     assert.equal(created.statusCode, 200); const id = created.json().data.id;
-    assert.equal((await app.inject({ method: "GET", url: "/api/library" })).json().data.categories[0].id, id);
+    const libraryAfterCreate = (await app.inject({ method: "GET", url: "/api/library" })).json().data;
+    assert.equal(libraryAfterCreate.categories[0].id, id);
+    assert.deepEqual(libraryAfterCreate.categories[0].tags, ["旅行"], "旧新增分类入口仍默认启用全部有效标签");
     const current = (await app.inject({ method: "GET", url: "/api/library/configuration" })).json().data as LibraryConfiguration;
     const bytes = readFileSync(f.path, "utf8");
     assert.equal((await app.inject({ method: "PUT", url: "/api/library/configuration", payload: editable(initial) })).json().error.code, "CONFIG_VERSION_CONFLICT");
@@ -97,6 +99,21 @@ test("隔离HTTP配置成功立即联动library，旧管理接口同源；非法
   } finally { await app.close(); f.database.close(); }
 });
 
+test("新增分类按表单标签范围保存，刷新与重开配置不补回未选标签", () => {
+  const f = fixture();
+  try {
+    const initial = editable(f.manager.view("owner")); initial.tags.push({ name: "纪念", enabled: true });
+    const withTags = f.manager.save("owner", initial); const requested = editable(withTags);
+    const travelId = withTags.tags.find(tag => tag.name === "旅行")!.id;
+    requested.categories.push({ name: "只选旅行", enabled: true, tagIds: [travelId] }, { name: "不选标签", enabled: true, tagIds: [] });
+    const saved = f.manager.save("owner", requested);
+    assert.deepEqual(saved.categories.find(category => category.name === "只选旅行")!.tagIds, [travelId]);
+    assert.deepEqual(saved.categories.find(category => category.name === "不选标签")!.tagIds, []);
+    assert.deepEqual(loadLibraryConfig(f.path).categories.find(category => category.name === "只选旅行")!.tags, ["旅行"]);
+    assert.deepEqual(loadLibraryConfig(f.path).categories.find(category => category.name === "不选标签")!.tags, []);
+  } finally { f.database.close(); }
+});
+
 test("隔离独立分类与标签CRUD：新增即能选择，分类筛选、标签改名与删除立即生效", async () => {
   const f = fixture(); const config = { ...readConfig({ NODE_ENV: "test" }), library: f.config, libraryConfigPath: f.path };
   const auth = { requireUser: async () => ({ user: { id: "owner", displayName: "隔离", totpEnabled: true, authMethod: "totp" as const, authVersion: 1, emailMasked: null, emailVerified: false }, loginSessionId: "isolated-login" }) };
@@ -104,7 +121,7 @@ test("隔离独立分类与标签CRUD：新增即能选择，分类筛选、标�
   try {
     const desired = editable(f.manager.view("owner")); desired.categories.push({ name: "学习", enabled: true, tagIds: [] }, { name: "已删除", enabled: false, tagIds: [] });
     let saved = f.manager.save("owner", desired); const learningId = saved.categories.find(category => category.name === "学习")!.id;
-    assert.deepEqual(f.config.categories.find(category => category.id === learningId)!.tags, ["旅行"], "新增分类默认可以选择已有有效标签");
+    assert.deepEqual(f.config.categories.find(category => category.id === learningId)!.tags, [], "新增分类尊重弹窗取消的标签选择，不强制补回已有标签");
     const narrowed = editable(saved); narrowed.categories.find(category => category.id === learningId)!.tagIds = [];
     saved = f.manager.save("owner", { ...narrowed, confirmImpact: true });
     const createTag = await app.inject({ method: "POST", url: "/api/tags", payload: { name: "笔记", version: saved.version } });

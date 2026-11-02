@@ -10,6 +10,7 @@ import "./theme-switcher.css";
 import "./space-console.css";
 import "./space-meteors.css";
 import "./space-motion-settings.css";
+import "./management-ui.css";
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
 applyTheme(readTheme());

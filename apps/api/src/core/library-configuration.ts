@@ -99,9 +99,8 @@ export function createLibraryConfiguration(database: AppDatabase, config: Librar
         const categories = input.categories.map(item => {
           if (!item || typeof item !== "object" || Object.keys(item).some(key => !["id", "name", "enabled", "tagIds"].includes(key)) || typeof item.enabled !== "boolean" || !Array.isArray(item.tagIds) || item.tagIds.length > 1000 || new Set(item.tagIds).size !== item.tagIds.length || item.tagIds.some(id => !tags.some(tag => tag.id === id)) || (item.id !== undefined && !knownCategoryIds.has(item.id))) throw new HttpError("VALIDATION_ERROR");
           if (item.enabled === false && current.categories.find(category => category.id === item.id)?.isDefault) throw new HttpError("ORGANIZATION_CONFLICT");
-          // 新增标签直接可用于全部启用分类；新分类默认可用全部有效标签。
-          // 既有分类手动配置的范围继续保留，无需通过二次保存绑定新标签。
-          const defaults = tags.filter(tag => tag.enabled && (item.id === undefined || item.enabled && !knownTagIds.has(tag.id))).map(tag => tag.id);
+          // 新分类采用表单显式选择；新增标签仍自动加入既有启用分类。
+          const defaults = tags.filter(tag => tag.enabled && item.id !== undefined && item.enabled && !knownTagIds.has(tag.id)).map(tag => tag.id);
           const tagIds = [...new Set([...item.tagIds, ...defaults])];
           return { id: item.id ?? randomUUID(), name: normalizeName(item.name), enabled: item.enabled, tagIds, tags: tagIds.map(id => tags.find(tag => tag.id === id)!.name) };
         });

@@ -1,0 +1,138 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import Database from "better-sqlite3";
+import { chromium, expect } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
+import { createServer } from "vite";
+import react from "@vitejs/plugin-react";
+import type { GuestCredential, GuestRecord } from "@online-video/shared";
+import { buildApp } from "../../api/src/app";
+import { readConfig } from "../../api/src/core/config";
+import { openDatabase } from "../../api/src/db/database";
+import { createRepositories } from "../../api/src/db/repositories";
+import { AuthService, initializeAccount } from "../../api/src/modules/auth/service";
+import { readAuthSettings } from "../../api/src/modules/auth/settings";
+import type { MailMessage } from "../../api/src/modules/auth/mail";
+import { createMediaModule, MockStorageAdapter, UnavailableMetadataInspector } from "../../api/src/modules/media/index";
+
+test("访客管理真实HTTP浏览器：邮箱管理员、一次密码交付、权限/URL/API、多会话重置撤销与自然到期", { timeout: 180000 }, async t => {
+  const evidence = fileURLToPath(new URL(`../../../.local/acceptance/guest-ui-${randomUUID()}/`, import.meta.url)); await mkdir(evidence, { recursive: true });
+  const path = join(evidence, "isolated-guests.db"); new Database(path).close();
+  const database = openDatabase(path, { initialize: true }); const key = randomBytes(32);
+  const credentials = await initializeAccount(database, key, "访客验收管理员");
+  const owner = (database.client.prepare("SELECT id FROM users").get() as { id: string }).id;
+  database.client.prepare("UPDATE users SET auth_method='email',email='owner@qq.com',email_verified_at=? WHERE id=?").run(new Date().toISOString(), owner);
+  const config = readConfig({ NODE_ENV: "test", MAX_UPLOAD_BYTES: "16777216", UPLOAD_PART_SIZE_BYTES: "131072", MAX_UPLOAD_CONCURRENCY: "1", MEDIA_REQUESTS_PER_MINUTE: "1000", OSS_OBJECT_PREFIX: "onlineVideo/" });
+  const category = (database.client.prepare("SELECT id FROM categories WHERE owner_id=?").get(owner) as { id: string }).id;
+  config.library = { mediaBaseUrl: "https://isolated-guest-media.test", objectPrefix: "onlineVideo/", categories: [{ id: category, name: "未分类", tags: [] }] };
+  const messages: MailMessage[] = []; const now = () => new Date();
+  const settings = readAuthSettings("test", { DATABASE_PATH: path, AUTH_KEY_FILE: join(evidence, "unused-auth.key"), AUTH_MAX_FAILURES: "100" });
+  const auth = new AuthService(database, key, settings, now, { send: async message => { messages.push(message); } });
+  const repos = createRepositories(database, now, config.library); const storage = new MockStorageAdapter("onlineVideo/");
+  const sample = await readFile(new URL("./fixtures/cover-timeline.mp4", import.meta.url)); storage.seed("onlineVideo/readonly.mp4", sample, "video/mp4");
+  const app = await buildApp({ config, auth, logger: false, backend: { config, database, auth, now }, media: { register: createMediaModule({ ...config.media!, metadata: new UnavailableMetadataInspector() }), dependencies: { kind: "test", config, auth, ...repos, storage, now } } });
+  app.get("/api/setup/status", async () => ({ data: { stage: "ready", authenticated: false, setupAvailable: false } }));
+  await app.listen({ host: "127.0.0.1", port: 0 }); const apiPort = (app.server.address() as { port: number }).port;
+  const vite = await createServer({ configFile: false, cacheDir: join(evidence, "vite-cache"), root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 15243, strictPort: false, hmr: false, watch: { ignored: ["**/*"] }, proxy: { "/api": { target: `http://127.0.0.1:${apiPort}` } } } });
+  await vite.listen(); const origin = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`; settings.allowedOrigins.splice(0, settings.allowedOrigins.length, origin);
+  const browser = await chromium.launch({ channel: "msedge", headless: true });
+  t.after(async () => { await browser.close(); await vite.close(); await app.close(); if (database.client.open) database.close(); });
+  const errors: string[] = []; const calls: { path: string; method: string; status: number }[] = [];
+  const context = async () => { const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+    await context.addInitScript("window.__name = (fn) => fn;");
+    await context.route(url => ["http:", "https:"].includes(url.protocol) && url.origin !== origin, route => route.abort());
+    await context.route(url => url.origin === config.library!.mediaBaseUrl, route => { const object = storage.objects.get(decodeURIComponent(new URL(route.request().url()).pathname).slice(1)); return object ? route.fulfill({ status: 200, contentType: object.metadata.contentType, body: object.bytes }) : route.fulfill({ status: 404 }); });
+    context.on("page", page => { page.setDefaultTimeout(12000); page.on("pageerror", error => errors.push(error.message)); page.on("response", response => { const url = new URL(response.url()); if (url.origin === origin && url.pathname.startsWith("/api/")) calls.push({ path: url.pathname, method: response.request().method(), status: response.status() }); }); }); return context;
+  };
+  const adminContext = await context(); const page = await adminContext.newPage();
+  const adminLogin = async () => { await page.goto(`${origin}/login`); await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByLabel("邮箱验证码", { exact: true })).toBeVisible();
+    const message = messages.at(-1)!; assert.equal(message.kind, "verification"); if (message.kind !== "verification") throw new Error("missing test mail");
+    await page.getByLabel("邮箱验证码", { exact: true }).fill(message.code); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.locator(".side-dock")).toBeVisible();
+  };
+  const csrf = async (context: BrowserContext) => { const response = await context.request.get(`${origin}/api/auth/me`); assert.equal(response.status(), 200); return (await response.json()).data.csrfToken as string; };
+  const adminRequest = async (url: string, data: unknown, method = "POST") => adminContext.request.fetch(`${origin}${url}`, { method, data, headers: { origin, "x-csrf-token": await csrf(adminContext) } });
+  const loginGuest = async (target: Page, password: string) => { await target.goto(`${origin}/guest/login`); await expect(target.getByLabel("邮箱验证码", { exact: true })).toHaveCount(0); await target.getByLabel("临时密码", { exact: true }).fill(password); await target.getByRole("button", { name: "访客登录", exact: true }).click(); };
+  const directAdminBypass = await adminContext.request.post(`${origin}/api/auth/login`, { headers: { origin }, data: { authMethod: "password", password: credentials.password } }); assert.notEqual(directAdminBypass.status(), 200);
+  await adminLogin(); const registered = await adminRequest("/api/videos/register-public", { publicUrl: `${config.library.mediaBaseUrl}/onlineVideo/readonly.mp4`, title: "只读验收视频", categoryId: category, tags: [] }); assert.equal(registered.status(), 200); const readonlyVideo = (await registered.json()).data as { id: string };
+  await page.goto(`${origin}/guests`); await expect(page.getByRole("heading", { name: "访客管理", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "新增访客", exact: true }).click(); let editor = page.getByRole("dialog", { name: "新增访客", exact: true });
+  await expect(editor.getByRole("checkbox", { name: /^首页库/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^上传视频/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^页面管理/ })).toBeChecked();
+  await expect(editor.getByRole("checkbox", { name: /^编辑视频/ })).not.toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^仅删除/ })).not.toBeChecked();
+  const count = () => (database.client.prepare("SELECT count(*) n FROM guests").get() as { n: number }).n;
+  await editor.getByLabel("访客名称", { exact: true }).fill("取消不创建"); await editor.getByRole("button", { name: "取消", exact: true }).click(); assert.equal(count(), 0);
+  await page.getByRole("button", { name: "新增访客", exact: true }).click(); editor = page.getByRole("dialog", { name: "新增访客", exact: true }); await editor.getByLabel("访客名称", { exact: true }).fill("默认受限访客");
+  for (const [theme, width, height] of [["light", 1440, 900], ["dark", 1440, 900], ["light", 375, 667], ["dark", 320, 568], ["light", 768, 900], ["dark", 667, 375]] as const) {
+    await page.setViewportSize({ width, height }); await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); await expect(editor.getByRole("button", { name: "创建并生成临时密码", exact: true })).toBeInViewport(); await page.screenshot({ path: join(evidence, `guest-editor-${theme}-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 }); await editor.getByRole("button", { name: "创建并生成临时密码", exact: true }).click();
+  const delivery = page.getByRole("dialog", { name: "临时密码仅展示一次", exact: true }); await expect(delivery).toBeVisible(); const password = await delivery.getByLabel("临时密码", { exact: true }).inputValue(); assert.ok(password.length >= 43);
+  const guest = (await (await adminContext.request.get(`${origin}/api/guests`)).json()).data.items[0] as GuestRecord;
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("isolated-denied"); } } }); });
+  await delivery.getByRole("button", { name: "复制登录信息", exact: true }).click(); await expect(delivery).toContainText("复制失败"); await expect(delivery.getByLabel("可手动复制的登录信息", { exact: true })).not.toBeEditable();
+  await delivery.getByRole("button", { name: "已保存，关闭", exact: true }).click(); await expect(page.getByText(password, { exact: true })).toHaveCount(0);
+  for (const [theme, width] of [["light", 1440], ["dark", 1440], ["light", 375], ["dark", 320]] as const) {
+    await page.setViewportSize({ width, height: 812 }); await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); await page.screenshot({ path: join(evidence, `guest-table-${theme}-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const listText = await (await adminContext.request.get(`${origin}/api/guests`)).text(); assert.equal(listText.includes(password), false);
+  assert.equal((await page.evaluate(() => JSON.stringify({ local: Object.entries(localStorage), session: Object.entries(sessionStorage) })) ).includes(password), false);
+  const row = page.locator(`[data-guest-id="${guest.id}"]`); await row.getByRole("button", { name: "编辑", exact: true }).click(); editor = page.getByRole("dialog", { name: "编辑访客", exact: true });
+  await editor.getByLabel("访客名称", { exact: true }).fill("冲突后保留草稿");
+  const changed = await adminRequest(`/api/guests/${guest.id}`, { name: "其他窗口更新", expiresAt: guest.expiresAt, permissions: guest.permissions, version: guest.version }, "PATCH"); assert.equal(changed.status(), 200);
+  await editor.getByRole("button", { name: "保存访客", exact: true }).click(); await expect(editor.getByRole("alert")).toBeVisible(); await expect(editor.getByLabel("访客名称", { exact: true })).toHaveValue("冲突后保留草稿");
+  await editor.getByRole("button", { name: "使用最新版本重试", exact: true }).click(); await editor.getByRole("button", { name: "保存访客", exact: true }).click(); await expect(editor).toHaveCount(0); await expect(row).toContainText("冲突后保留草稿");
+
+  const visitorContext = await context(); const visitor = await visitorContext.newPage(); const second = await visitorContext.newPage(); await loginGuest(visitor, password); await expect(visitor).toHaveURL(`${origin}/`);
+  const readonlyBefore = calls.length; await visitor.goto(`${origin}/videos/${readonlyVideo.id}`); await expect(visitor.locator("video")).toBeVisible(); await expect.poll(() => visitor.locator("video").evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
+  await expect(visitor.getByRole("button", { name: /编辑|管理记录|仅删除|重新采集时长/ })).toHaveCount(0);
+  assert.equal(calls.slice(readonlyBefore).some(call => call.method !== "GET" && /\/(duration|cover)$/.test(call.path)), false, "只读详情不得自动请求时长/封面写接口");
+  assert.equal((database.client.prepare("SELECT duration_seconds value FROM videos WHERE id=?").get(readonlyVideo.id) as { value: number | null }).value, null);
+  const uploadListsBefore = calls.filter(call => call.method === "GET" && call.path === "/api/uploads").length;
+  let releaseUploadBootstrap = () => {}; const uploadBootstrap = new Promise<void>(resolve => { releaseUploadBootstrap = resolve; });
+  const startupRequest = (url: URL) => url.origin === origin && ["/api/library", "/api/settings/limits"].includes(url.pathname);
+  await visitor.route(startupRequest, async route => { await uploadBootstrap; await route.continue(); });
+  await visitor.goto(`${origin}/upload`); const fileInput = visitor.getByLabel("视频文件", { exact: true }); const sampleFile = { name: "guest-sample.mp4", mimeType: "video/mp4", buffer: sample };
+  // setInputFiles 不等待 enabled；慢配置响应下提前注入会被组件的禁用保护忽略。
+  await expect(fileInput).toBeDisabled(); await fileInput.setInputFiles(sampleFile); await expect(visitor.locator(".pending-upload-row")).toHaveCount(0);
+  releaseUploadBootstrap(); await expect(fileInput).toBeEnabled(); await visitor.unroute(startupRequest);
+  await fileInput.setInputFiles(sampleFile); await expect(visitor.locator(".pending-upload-row")).toHaveCount(1);
+  await expect(visitor.getByLabel("视频标题", { exact: true })).toBeEnabled(); await visitor.getByLabel("视频标题", { exact: true }).fill("默认访客上传样例"); await visitor.getByRole("button", { name: "提交 1 个视频并上传", exact: true }).click();
+  await expect(visitor.getByRole("heading", { name: "本次上传进度", exact: true })).toBeVisible(); await expect(visitor.getByText(/上传已完成 · 100%/)).toBeVisible(); await expect(visitor).toHaveURL(`${origin}/upload`);
+  assert.equal(calls.filter(call => call.method === "GET" && call.path === "/api/uploads").length, uploadListsBefore, "默认无任务列表权限不能拉取任务全集");
+  assert.equal((database.client.prepare("SELECT count(*) n FROM guest_uploads WHERE guest_id=?").get(guest.id) as { n: number }).n, 1);
+  await visitor.screenshot({ path: join(evidence, "guest-upload-no-tasks.png") });
+  const secondContext = await context(); const otherDevice = await secondContext.newPage(); await loginGuest(otherDevice, password); await expect(otherDevice).toHaveURL(`${origin}/`);
+  await second.goto(`${origin}/pages`); await expect(second.getByRole("button", { name: "编辑个人外观", exact: true })).toBeVisible(); await expect(second.getByRole("button", { name: "编辑默认外观", exact: true })).toHaveCount(0);
+  await expect(visitor.locator(".side-nav-menu").getByRole("link", { name: "系统设置", exact: true })).toHaveCount(0); await expect(visitor.locator(".side-nav-menu").getByRole("link", { name: "访客管理", exact: true })).toHaveCount(0);
+  for (const target of ["/settings", "/security", "/guests", "/categories", "/tasks"]) { await visitor.goto(`${origin}${target}`); await expect(visitor.getByRole("heading", { name: /无权|没有.*权限|未授权|无访问权限/ })).toBeVisible(); }
+  for (const target of ["/api/guests", "/api/auth/security", "/api/auth/sessions", "/api/settings/site"]) assert.equal((await visitorContext.request.get(`${origin}${target}`)).status(), 403, target);
+  await visitor.goto(`${origin}/pages`); await expect(visitor.getByRole("button", { name: "编辑个人外观", exact: true })).toBeVisible();
+  const beforePersonal = calls.filter(call => call.path === "/api/settings/site").length;
+  await visitor.getByRole("button", { name: "编辑个人外观", exact: true }).click(); await visitor.getByRole("dialog").getByRole("radio", { name: "深色", exact: true }).check(); await visitor.getByRole("dialog").getByRole("button", { name: "保存", exact: true }).click();
+  assert.equal(calls.filter(call => call.path === "/api/settings/site").length, beforePersonal);
+
+  await row.getByRole("button", { name: "重置密码", exact: true }).click(); await page.getByRole("alertdialog").getByRole("button", { name: "取消", exact: true }).click(); await expect(row.getByRole("button", { name: "重置密码", exact: true })).toBeFocused();
+  await row.getByRole("button", { name: "重置密码", exact: true }).click(); await page.getByRole("alertdialog").getByRole("button", { name: "确认重置密码", exact: true }).click(); await expect(delivery).toBeVisible(); const newPassword = await delivery.getByLabel("临时密码", { exact: true }).inputValue(); assert.notEqual(newPassword, password); await delivery.getByRole("button", { name: "已保存，关闭", exact: true }).click();
+  assert.equal((await visitorContext.request.get(`${origin}/api/auth/me`)).status(), 401); assert.equal((await secondContext.request.get(`${origin}/api/auth/me`)).status(), 401);
+  await visitor.reload(); await expect(visitor).toHaveURL(/\/guest\/login$/); await expect(visitor.getByRole("status")).toContainText(/过期|失效|撤销/); await otherDevice.reload(); await expect(otherDevice).toHaveURL(/\/guest\/login$/);
+  await loginGuest(visitor, password); await expect(visitor.getByRole("alert")).toBeVisible(); await loginGuest(visitor, newPassword); await expect(visitor).toHaveURL(`${origin}/`);
+
+  await row.getByRole("button", { name: "编辑", exact: true }).click(); editor = page.getByRole("dialog", { name: "编辑访客", exact: true }); await editor.getByRole("checkbox", { name: /^上传视频/ }).uncheck(); await editor.getByRole("checkbox", { name: /^页面管理/ }).uncheck(); await editor.getByRole("button", { name: "保存访客", exact: true }).click(); await expect(editor).toHaveCount(0);
+  await visitor.reload(); await expect(visitor.locator(".side-nav-menu").getByRole("link", { name: "上传视频", exact: true })).toHaveCount(0); assert.equal((await visitorContext.request.get(`${origin}/api/settings/limits`)).status(), 403);
+  await row.getByRole("button", { name: "提前失效", exact: true }).click(); await page.getByRole("alertdialog").getByRole("button", { name: "确认提前失效", exact: true }).click(); await expect(row).toContainText("已过期"); await expect(row.getByRole("button", { name: "编辑", exact: true })).toBeDisabled();
+  await visitor.reload(); await expect(visitor).toHaveURL(/\/guest\/login$/); await loginGuest(visitor, newPassword); await expect(visitor.getByRole("alert")).toBeVisible();
+
+  const shortResponse = await adminRequest("/api/guests", { name: "自然到期访客", expiresAt: new Date(now().getTime() + 7000).toISOString(), permissions: ["pages"] }); assert.equal(shortResponse.status(), 200); const short = (await shortResponse.json()).data as GuestCredential;
+  await loginGuest(visitor, short.password); await expect(visitor).toHaveURL(`${origin}/pages`); await expect(visitor).toHaveURL(/\/guest\/login$/, { timeout: 12000 });
+  assert.equal((await visitorContext.request.get(`${origin}/api/auth/me`)).status(), 401); await loginGuest(visitor, short.password); await expect(visitor.getByRole("alert")).toBeVisible();
+  await page.getByRole("button", { name: "刷新列表", exact: true }).click(); await expect(page.locator(`[data-guest-id="${short.guest.id}"]`)).toContainText("已过期");
+  assert.deepEqual(errors, []); assert.deepEqual(database.client.pragma("foreign_key_check"), []);
+  await writeFile(join(evidence, "result.json"), JSON.stringify({ guestId: guest.id, realAuth: true, realHttp: true, realSqlite: true, mail: "isolated fake sender", oss: "isolated mock adapter", calls }, null, 2));
+  t.diagnostic(`访客真实HTTP/Cookie/SQLite与浏览器证据（OSS/邮件替身）：${evidence}`);
+});

@@ -60,7 +60,7 @@ test("完整SQL首次部署真浏览器：真实HTTP/SQLite/Cookie/CSRF、独立
   await page.getByRole("button", { name: "完成设置，前往登录", exact: true }).click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
   assert.equal((await context.cookies()).some(cookie => cookie.name === "ov_setup"), false); await expect(page.getByLabel(/^动态验证码/)).toHaveCount(0); await passwordLogin();
 
-  await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); await page.getByLabel("公开视频地址", { exact: true }).fill("https://media.example.com/demo-videos/isolated.mp4"); await page.getByLabel("视频标题", { exact: true }).fill("动态域名隔离视频"); await page.getByRole("button", { name: "登记公开视频", exact: true }).click();
+  await page.goto(`${origin}/upload`); await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); const importDialog = page.getByRole("dialog", { name: "导入已有视频", exact: true }); await importDialog.getByLabel("公开视频地址", { exact: true }).fill("https://media.example.com/demo-videos/isolated.mp4"); await importDialog.getByLabel("视频标题", { exact: true }).fill("动态域名隔离视频"); await importDialog.getByRole("button", { name: "登记公开视频", exact: true }).click();
   await expect(page.getByLabel("公共地址", { exact: true })).toHaveValue("https://media.example.com/demo-videos/isolated.mp4");
   const video = database.client.prepare("SELECT id FROM videos").get() as { id: string }; assert.ok(video.id);
   await page.goto(`${origin}/videos/${video.id}`); await expect(page.locator("video")).toHaveAttribute("src", "https://media.example.com/demo-videos/isolated.mp4");

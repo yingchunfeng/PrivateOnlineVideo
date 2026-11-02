@@ -8,6 +8,7 @@ export interface MediaOptions {
   uploadObjectPrefix?: string;
   partSizeBytes: number;
   maxUploadBytes: number;
+  getMaxUploadBytes?: () => number;
   maxUploadConcurrency: number;
   playbackTtlMs: number;
   requestsPerMinute: number;

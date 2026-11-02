@@ -6,6 +6,7 @@ import { ObjectScope } from "./storage/scope.js";
 import { RequestLimiter } from "./limits/rate.js";
 import { MAX_ORGANIZATION_LINKS } from "@online-video/shared";
 import type { OrganizationSelection } from "@online-video/shared";
+import { guestRequestSignal } from "../../core/guest-access.js";
 
 export interface MediaContext { dependencies: MediaDependencies; options: MediaOptions; scope: ObjectScope; limiter: RequestLimiter }
 export async function principal(context: MediaContext, request: FastifyRequest, mutation = false): Promise<AuthPrincipal> {
@@ -43,10 +44,13 @@ export async function assertOrganization(context: MediaContext, ownerId: string,
 }
 export function requestSignal(request: FastifyRequest, reply: FastifyReply) {
   const controller = new AbortController(); const abort = () => controller.abort();
+  const guestSignal = guestRequestSignal(request);
+  guestSignal?.addEventListener("abort", abort, { once: true });
+  if (guestSignal?.aborted) abort();
   // 完整收到请求体后 IncomingMessage 未必发 aborted；等待响应时仍要取消上游。
   const responseClosed = () => { if (!reply.raw.writableFinished) abort(); };
   request.raw.once("aborted", abort);
   reply.raw.once("close", responseClosed);
   if (request.raw.aborted || (reply.raw.destroyed && !reply.raw.writableFinished)) abort();
-  return { controller, dispose: () => { request.raw.removeListener("aborted", abort); reply.raw.removeListener("close", responseClosed); } };
+  return { controller, dispose: () => { guestSignal?.removeEventListener("abort", abort); request.raw.removeListener("aborted", abort); reply.raw.removeListener("close", responseClosed); } };
 }

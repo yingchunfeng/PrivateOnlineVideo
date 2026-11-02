@@ -5,7 +5,7 @@ import type { LoginRequest, LoginCodeRequest, BindEmailRequest, BindEmailConfirm
 import { AuthService } from "./service.js";
 import { HttpError } from "../../core/errors.js";
 
-export function registerAuthModule(app: FastifyInstance, service: AuthService): void {
+export function registerAuthModule(app: FastifyInstance, service: AuthService, loginTheme: () => "light" | "dark" = () => "light"): void {
   app.register(cookie);
   app.register(async scope => {
     const cookieOptions = { path: "/", httpOnly: true, secure: service.settings.secureCookie, sameSite: "strict" as const };
@@ -34,7 +34,13 @@ export function registerAuthModule(app: FastifyInstance, service: AuthService): 
     } } }, async (request, reply) => {
       const result = await service.login(request, request.body);
       reply.setCookie(service.cookieName, result.token, { ...cookieOptions, expires: new Date(result.expiresAt), maxAge: Math.floor(service.settings.sessionTtlMs / 1000) });
-      return { data: result.data };
+      return { data: { ...result.data, defaultTheme: loginTheme() } };
+    });
+    scope.post<{ Body: { password: string } }>("/api/auth/guest/login", { bodyLimit: 2048, schema: { body: body({ password: { type: "string", minLength: 1, maxLength: 128 } }) } }, async (request, reply) => {
+      const result = await service.guestLogin(request, request.body);
+      reply.setCookie(service.cookieName, result.token, { ...cookieOptions, expires: new Date(result.expiresAt),
+        maxAge: Math.max(1, Math.floor((Date.parse(result.expiresAt) - service.now().getTime()) / 1000)) });
+      return { data: { ...result.data, defaultTheme: loginTheme() } };
     });
     scope.get("/api/auth/me", async request => ({ data: await service.me(request) }));
     scope.get("/api/auth/security", async request => ({ data: await service.security(request) }));

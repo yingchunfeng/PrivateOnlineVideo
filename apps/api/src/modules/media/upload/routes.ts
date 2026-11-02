@@ -12,6 +12,7 @@ import { UploadLocks } from "./locks.js";
 import { makeVideo } from "./video.js";
 import { uploadFileType } from "./file.js";
 import { unknownMetadata } from "../metadata/types.js";
+import { assertGuestRequest, assertGuestUpload, bindGuestUpload, guestUploadPage } from "../../../core/guest-access.js";
 
 async function assertUploadSelection(context: MediaContext, ownerId: string, record: UploadRecord): Promise<void> {
   // 公共任务已在创建时校验并保存快照，分类停用或标签改名不能阻断旧任务恢复。
@@ -43,14 +44,19 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
     };
     const status = request.query.status;
     if (status !== undefined && !(UPLOAD_STATUSES as readonly string[]).includes(status)) throw new HttpError("VALIDATION_ERROR");
-    return { data: await deps.uploads.listOwned(auth.user.id, { page: pageValue(request.query.page, 1, 1_000_000),
-      pageSize: pageValue(request.query.pageSize, 20, 100), ...(status ? { status: status as UploadTask["status"] } : {}) }) };
+    const page = pageValue(request.query.page, 1, 1_000_000); const pageSize = pageValue(request.query.pageSize, 20, 100);
+    const guestPage = guestUploadPage(request, page, pageSize, status);
+    if (guestPage) {
+      const records = await Promise.all(guestPage.ids.map(id => deps.uploads.findOwned(auth.user.id, id)));
+      return { data: { page, pageSize, total: guestPage.total, items: records.filter(record => record !== null).map(publicUpload) } };
+    }
+    return { data: await deps.uploads.listOwned(auth.user.id, { page, pageSize, ...(status ? { status: status as UploadTask["status"] } : {}) }) };
   });
   app.post("/api/uploads", async (request, reply) => {
     const auth = await principal(context, request, true); const body = recordBody(request.body);
     const library = deps.config.library;
     const fileName = text(body.fileName); const title = text(body.title);
-    const sizeBytes = integer(body.sizeBytes, 1, options.maxUploadBytes);
+    const sizeBytes = integer(body.sizeBytes, 1, Number.MAX_SAFE_INTEGER);
     const clientRequestId = body.clientRequestId === undefined ? undefined : text(body.clientRequestId, 128);
     if (clientRequestId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{7,127}$/.test(clientRequestId)) throw new HttpError("VALIDATION_ERROR");
     const requestTags = body.tags === undefined && library ? [] : body.tags;
@@ -62,8 +68,9 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
         const existing = await deps.uploads.findByClientRequestId(auth.user.id, clientRequestId,
           { fileName, title, sizeBytes, ...organizationSelection(body),
             ...(requestTags === undefined ? {} : { tags: requestTags as string[] }), clientRequestId });
-        if (existing) return { data: publicUpload(existing) };
+        if (existing) { assertGuestUpload(request, existing.task.id); return { data: publicUpload(existing) }; }
       }
+      integer(sizeBytes, 1, Math.min(options.getMaxUploadBytes?.() ?? options.maxUploadBytes, options.partSizeBytes * 10_000));
       const fileType = library ? uploadFileType(fileName) : null;
       const selected = library ? assertLibrarySelection(library, body) : null;
       if (selected && !deps.organizations?.normalizeSelection) throw new HttpError("SERVICE_NOT_CONFIGURED");
@@ -80,16 +87,20 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
           const location = deps.config.storageDriver === "oss" ? { provider: "oss" as const, bucket: deps.config.oss!.bucket, region: deps.config.oss!.region, key, versionId: null } :
             { provider: "mock" as const, bucket: "", region: "", key, versionId: null };
           const prepared = await deps.objects.prepare({ ownerId: auth.user.id, object: location, operation: "upload" });
+          assertGuestRequest(request);
           const record = await deps.uploads.create({ ownerId: auth.user.id, request: input, object: prepared.object, storageUploadId: "",
             partSizeBytes: options.partSizeBytes, operationId: prepared.operationId });
+          bindGuestUpload(request, record.task.id);
           // 首片才初始化云分片；创建失败不能让前端丢失已持久化任务的 ID。
           return { data: publicUpload(record) };
         }
         const object = { key };
         const multipart = await deps.storage.createMultipart({ object, contentType: fileType?.contentType ?? "application/octet-stream", signal: controller.signal });
         controller.signal.throwIfAborted();
+        assertGuestRequest(request);
         const record = await deps.uploads.create({ ownerId: auth.user.id, request: input, object, storageUploadId: multipart.uploadId,
           partSizeBytes: options.partSizeBytes });
+        bindGuestUpload(request, record.task.id);
         return { data: publicUpload(record) };
       } finally { controller.abort(); dispose(); }
     };
@@ -115,6 +126,7 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
       return await locks.run(uploadId, async () => {
         controller.signal.throwIfAborted();
         let record = await deps.uploads.findOwned(auth.user.id, uploadId);
+        assertGuestRequest(request);
         if (!record) throw new HttpError("NOT_FOUND");
         if (record.task.status !== "uploading") throw new HttpError("UPLOAD_STATE_CONFLICT");
         const expected = Math.min(record.task.partSizeBytes, record.task.sizeBytes - (partNumber - 1) * record.task.partSizeBytes);
@@ -163,6 +175,7 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
           // 适配器必须消费至 EOF；不能提前返回成功而跳过校验。
           if (!verify.readableEnded || size !== expected) throw new HttpError("FILE_MISMATCH");
           controller.signal.throwIfAborted();
+          assertGuestRequest(request);
           const saved = await deps.uploads.savePart(auth.user.id, uploadId, { partNumber, sizeBytes: expected, checksum, etag });
           const part = saved.parts.find(value => value.partNumber === partNumber)!;
           return { data: { partNumber: part.partNumber, sizeBytes: part.sizeBytes, checksum: part.checksum } };
@@ -205,6 +218,7 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
           throw new HttpError("UPLOAD_STATE_CONFLICT");
         }
         await assertUploadSelection(context, auth.user.id, record);
+        assertGuestRequest(request);
         record = await deps.uploads.transition(auth.user.id, uploadId, record.task.status, "finalizing");
         let objectCompleted = false;
         try {
@@ -234,6 +248,7 @@ export function registerUploadRoutes(app: FastifyInstance, context: MediaContext
           const videoInput = makeVideo({ ownerId: auth.user.id, title: record.title, categoryId: record.categoryId,
             groupIds: record.task.groupIds ?? [], tagIds: record.task.tagIds ?? [], tags: record.task.tags ?? [], fileName: record.task.fileName,
             object, sizeBytes: verified.sizeBytes, metadata: media, dependencies: deps });
+          assertGuestRequest(request);
           if (deps.uploads.finishRegistration) {
             const result = await deps.uploads.finishRegistration({ ownerId: auth.user.id, uploadId, video: videoInput,
               ...(record.operationId ? { operationId: record.operationId } : {}) });

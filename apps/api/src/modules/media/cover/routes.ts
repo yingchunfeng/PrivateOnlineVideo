@@ -5,6 +5,7 @@ import type { MediaContext } from "../context.js";
 import { principal, requestSignal, text } from "../context.js";
 import { UploadLocks } from "../upload/locks.js";
 import { inspectCoverImage, MAX_COVER_BYTES } from "./image.js";
+import { assertGuestRequest } from "../../../core/guest-access.js";
 
 export function registerCoverRoutes(app: FastifyInstance, context: MediaContext): void {
   const { dependencies: deps } = context; const locks = new UploadLocks();
@@ -21,6 +22,8 @@ export function registerCoverRoutes(app: FastifyInstance, context: MediaContext)
         controller.signal.throwIfAborted();
         const video = await deps.videos.findOwned(auth.user.id, videoId);
         if (!video) throw new HttpError("NOT_FOUND");
+        const current = await principal(context, request, true);
+        if (current.guest && !current.guest.permissions.includes("video_edit") && video.thumbnailObject) throw new HttpError("FORBIDDEN");
         if (!/^[a-zA-Z0-9_-]{1,128}$/.test(video.video.categoryId)) throw new HttpError("VALIDATION_ERROR");
         if (deps.config.storageDriver === "oss" && !deps.config.oss) throw new HttpError("SERVICE_NOT_CONFIGURED");
         const key = `${deps.config.library!.objectPrefix}${video.video.categoryId}/covers/${randomUUID()}.jpg`;
@@ -56,6 +59,14 @@ export function registerCoverRoutes(app: FastifyInstance, context: MediaContext)
           await deps.objects!.recordOperation({ ownerId: auth.user.id, operationId: prepared.operationId, state: "object_completed" });
           const object = await deps.objects!.verify({ ownerId: auth.user.id, object: prepared.object, metadata });
           controller.signal.throwIfAborted();
+          assertGuestRequest(request);
+          const fresh = await principal(context, request, true);
+          if (fresh.guest && !fresh.guest.permissions.includes("video_edit")) {
+            const latest = await deps.videos.findOwned(auth.user.id, videoId);
+            if (!latest) throw new HttpError("NOT_FOUND");
+            if (latest.thumbnailObject) throw new HttpError("FORBIDDEN");
+          }
+          assertGuestRequest(request);
           const saved = await deps.videos.saveCover!({ ownerId: auth.user.id, videoId, thumbnailObject: object, operationId: prepared.operationId });
           return { data: saved.video };
         } catch (error) {

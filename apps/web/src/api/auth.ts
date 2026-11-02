@@ -1,8 +1,11 @@
 import type { AccountMutationResult, AccountOperationRequest, AccountSecuritySummary, AuthSession, BindEmailConfirmRequest, BindEmailRequest, ChangeEmailConfirmRequest, ChangeEmailRequest, ChangePasswordRequest, EmailChallenge, EmailChangeAuthorization, LoginCodeRequest, LoginOptions, LoginRequest, LoginSession, PasswordCodeRequest, VerifyOldEmailRequest } from "@online-video/shared";
-import { isEmailProviderList } from "@online-video/shared";
+import { GUEST_PERMISSIONS, isEmailProviderList } from "@online-video/shared";
 import { ApiClient, ApiError } from "./client";
 
 export function validateAuthSession(value: AuthSession): AuthSession {
+  if (value?.user?.role !== undefined && !["admin", "guest"].includes(value.user.role)) throw new ApiError("INVALID_RESPONSE", "登录身份无法确认，请重新登录");
+  if (value?.guest && (value.user?.role !== "guest" || !value.guest.id || typeof value.guest.name !== "string" || !Array.isArray(value.guest.permissions) || value.guest.permissions.some(permission => !GUEST_PERMISSIONS.includes(permission)) || ![value.guest.expiresAt, value.guest.serverTime].every(time => typeof time === "string" && Number.isFinite(Date.parse(time))))) throw new ApiError("INVALID_RESPONSE", "访客权限信息不完整，请重新登录");
+  if (value?.user?.role === "guest" && !value.guest) throw new ApiError("INVALID_RESPONSE", "访客身份信息不完整，请重新登录");
   if (!value || typeof value.csrfToken !== "string" || !value.csrfToken || !value.user || typeof value.user.id !== "string" || !value.user.id || typeof value.user.displayName !== "string" || typeof value.user.totpEnabled !== "boolean" || !["password", "totp", "email"].includes(value.user.authMethod) || !Number.isSafeInteger(value.user.authVersion) || value.user.authVersion < 1 || !(value.user.emailMasked === null || typeof value.user.emailMasked === "string") || typeof value.user.emailVerified !== "boolean" || value.user.authMethod === "email" && (!value.user.emailVerified || !value.user.emailMasked)) throw new ApiError("INVALID_RESPONSE", "登录会话信息不完整，请重新尝试");
   return value;
 }

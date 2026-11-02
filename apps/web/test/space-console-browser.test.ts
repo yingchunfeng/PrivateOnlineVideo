@@ -9,6 +9,7 @@ import react from "@vitejs/plugin-react";
 import type { UploadTask, VideoDetail } from "@online-video/shared";
 import { spaceMotionStorageKey } from "../src/space-motion";
 import { DEFAULT_SPACE_SETTINGS, SPACE_EFFECTS_STORAGE_KEY } from "../src/space-meteor-settings";
+import { fixtureSiteSettings, openSpaceSettings, selectPersonalTheme, setSpaceEnabled } from "./page-settings-helpers";
 
 const evidence = fileURLToPath(new URL(`../../../.local/acceptance/space-a-${randomUUID()}/`, import.meta.url));
 const mediaOrigin = "https://space-preview.example";
@@ -21,7 +22,7 @@ function sampleCover(index: number) {
 }
 
 test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and responsive layout", { timeout: 120000 }, async t => {
-  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0 } });
+  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), cacheDir: `${evidence}/vite-cache`, mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, watch: null, hmr: false } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
     await server.listen();
@@ -60,6 +61,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
         case "/api/auth/me": return ok({ user: { id: "preview-owner", displayName: "界面预览", totpEnabled: false, authMethod: "password", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "preview-csrf" });
         case "/api/library": return ok({ mediaBaseUrl: mediaOrigin, objectPrefix: "media/", categories: [{ id: "space", name: "私人影像", tags: ["宇宙", "旅行"] }] });
         case "/api/settings/limits": return ok({ maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
+        case "/api/settings/site": return ok(fixtureSiteSettings);
         case "/api/videos": { const query = url.searchParams.get("q") ?? ""; const items = videos.filter(video => video.title.includes(query)); return ok({ items, total: items.length, page: 1, pageSize: 12 }); }
         case "/api/uploads": return ok({ items: tasks, total: tasks.length, page: 1, pageSize: 20 });
         case "/api/videos/space-0": return ok(videos[0]);
@@ -83,7 +85,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       for (const theme of ["light", "dark"]) {
         await page.goto(origin);
         await expect(page.locator(".video-card")).toHaveCount(8);
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         await expect(page.locator(".space-atmosphere")).toHaveAttribute("aria-hidden", "true");
         await expect(page.locator(".space-atmosphere")).toHaveCSS("pointer-events", "none");
         await expect(page.locator(".orbit-chart")).toHaveAttribute("focusable", "false");
@@ -117,8 +119,14 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await expect(page.locator(".empty .orbit-illustration")).toBeVisible();
       await page.screenshot({ path: `${evidence}/empty-dark.png`, fullPage: true });
       await page.goto(`${origin}/tasks`);
-      await expect(page.locator(".transfer-orbit")).toHaveCount(3);
-      assert.deepEqual(await page.locator(".transfer-orbit").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-progress"))), ["0", "50", "100"]);
+      await expect(page.locator("tr[data-task-id]")).toHaveCount(3);
+      const ringProgress: string[] = [];
+      for (const id of ["task-0", "task-1", "task-2"]) {
+        await page.locator(`[data-task-id="${id}"]`).getByRole("button", { name: "查看详情", exact: true }).click();
+        ringProgress.push((await page.getByRole("dialog", { name: "任务详情", exact: true }).locator(".transfer-orbit").getAttribute("data-progress"))!);
+        await page.keyboard.press("Escape");
+      }
+      assert.deepEqual(ringProgress, ["0", "50", "100"]);
       await expect(page.locator('[data-task-id="task-2"]')).toContainText("尚未确认视频登记");
       await expect(page.locator('[data-task-id="task-2"]')).not.toContainText("视频已登记");
       await page.screenshot({ path: `${evidence}/tasks-dark.png`, fullPage: true });
@@ -130,7 +138,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
         for (const theme of ["light", "dark"]) {
           await page.goto(origin);
           await expect(page.locator(".video-card")).toHaveCount(8);
-          await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+          await selectPersonalTheme(page, theme);
           await assertWidth();
           if (width <= 375) {
             await expect(page.locator(".video-card-actions .button").first()).toHaveCSS("white-space", "nowrap");
@@ -164,15 +172,11 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       const x = await traveler.evaluate(node => node.getBoundingClientRect().x);
       await expect.poll(() => traveler.evaluate(node => node.getBoundingClientRect().x).then(next => Math.abs(next - x))).toBeGreaterThan(1);
       for (const theme of ["light", "dark"]) {
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         await settleSurfaces();
         await page.screenshot({ path: `${evidence}/library-motion-${theme}.png`, fullPage: true });
       }
-      const toggle = page.getByRole("button", { name: "动态星空", exact: true });
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
-      await toggle.focus();
-      await page.keyboard.press("Space");
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await setSpaceEnabled(page, false);
       await expect(star).toHaveCSS("animation-name", "none");
       await expect(traveler).toHaveCSS("animation-name", "none");
       assert.equal(await page.evaluate(key => localStorage.getItem(key), spaceMotionStorageKey), "off");
@@ -180,7 +184,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off");
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       await expect(page.locator(".video-card")).toHaveCount(8);
-      await page.getByRole("button", { name: "浅色", exact: true }).click();
+      await selectPersonalTheme(page, "light");
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off");
       await page.goto(`${origin}/upload`);
       const transfer = await page.evaluateHandle(() => new DataTransfer());
@@ -190,7 +194,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await expect(dropzone.locator(".upload-orbit-satellite")).toHaveCSS("animation-name", "none");
       await dropzone.dispatchEvent("dragleave");
       await transfer.dispose();
-      await toggle.click();
+      await setSpaceEnabled(page, true);
     });
 
     await t.test("SPA navigation reuses one background, planet and running orbital timeline", async () => {
@@ -232,16 +236,16 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
     await t.test("system reduced motion overrides the switch and preference changes synchronize across tabs", async () => {
       await page.goto(origin);
       await page.emulateMedia({ reducedMotion: "reduce" });
-      const toggle = page.getByRole("button", { name: "动态星空", exact: true });
-      await expect(toggle).toBeDisabled();
-      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await openSpaceSettings(page);
+      await expect(page.getByRole("button", { name: "立即预览流星雨", exact: true })).toBeDisabled();
+      await expect(page.getByRole("checkbox", { name: /^启用动态星空/ })).toBeChecked();
       await expect(page.locator(".space-star-twinkle").first()).toHaveCSS("animation-name", "none");
       await expect(page.locator(".orbit-chart-traveler").first()).toHaveCSS("animation-name", "none");
       await expect(page.locator(".space-meteors-foreground")).toBeHidden();
       await expect(page.locator(".space-meteor")).toHaveCount(0);
       await page.emulateMedia({ reducedMotion: "no-preference" });
-      await expect(toggle).toBeEnabled();
-      await expect(toggle).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("button", { name: "立即预览流星雨", exact: true })).toBeEnabled();
+      await page.getByRole("button", { name: "取消", exact: true }).click();
       const other = await context.newPage();
       try {
         await other.goto(origin);
@@ -276,7 +280,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await page.goto(`${origin}/upload`);
       const dropzone = page.getByRole("button", { name: "选择视频文件", exact: true });
       await expect(dropzone).toBeEnabled();
-      await page.getByRole("button", { name: "深色", exact: true }).click();
+      await selectPersonalTheme(page, "dark");
       const satellite = dropzone.locator(".upload-orbit-satellite");
       await dropzone.hover();
       await expect(satellite).toHaveCSS("animation-name", "station-satellite");
@@ -295,7 +299,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await page.screenshot({ path: `${evidence}/upload-motion-dark.png`, fullPage: true });
       await dropzone.dispatchEvent("dragleave");
       await transfer.dispose();
-      await page.getByRole("button", { name: "动态星空", exact: true }).focus();
+      await page.locator('.side-nav-menu a[href="/pages"]').focus();
       await expect(satellite).toHaveCSS("animation-name", "none");
     });
 
@@ -375,15 +379,16 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       assert.ok(await page.locator(`${nearSelector} .meteor-streak`).evaluate(node => node.getBoundingClientRect().width) > 50);
       assert.ok(await page.locator(nearSelector).evaluate(node => Number(getComputedStyle(node).opacity)) > .3);
       for (const theme of ["light", "dark"]) {
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         await page.screenshot({ path: `${evidence}/meteors-over-content-${theme}.png`, animations: "allow" });
       }
+      await page.getByRole("button", { name: "搜索", exact: true }).click();
       const search = page.getByRole("searchbox");
       await search.fill("输入时避让");
       await expect(page.locator(".space-meteors-foreground")).toHaveCSS("visibility", "hidden");
       await expect(page.locator(nearSelector)).toHaveCSS("animation-play-state", "paused");
       await search.fill("");
-      await page.getByRole("button", { name: "动态星空", exact: true }).focus();
+      await page.locator('.side-nav-menu a[href="/pages"]').focus();
       await expect(page.locator(".space-meteors-foreground")).toHaveCSS("visibility", "visible");
       // 将现有星核定位到卡片链接内部，命中测试不依赖随机轨迹落点。
       const cardPoint = await page.locator('.video-card-preview[href="/videos/space-2"]').evaluate(node => { const box = node.getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 }; });
@@ -428,10 +433,10 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
             await visual.clock.runFor(3000);
             await expect(visual.locator(".space-meteor")).toHaveCount(24);
           }
-          await visual.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+          await selectPersonalTheme(visual, theme);
           await freezeScene();
           await visual.screenshot({ path: `${evidence}/meteor-rain-wide-${theme}.png`, animations: "allow" });
-          await visual.getByRole("button", { name: "星空动效设置", exact: true }).click();
+          await openSpaceSettings(visual);
           await expect(visual.getByRole("dialog", { name: "星空动效设置", exact: true })).toBeInViewport();
           await expect(visual.locator("dialog[data-space-settings]")).toHaveCSS("background-color", theme === "light" ? "rgb(255, 255, 255)" : "rgb(15, 23, 42)");
           await expect(visual.locator(".space-meteors-background")).toHaveCSS("visibility", "visible");
@@ -444,11 +449,13 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
           await expect(visual.locator(".space-meteors-background")).toHaveAttribute("data-shower", "true");
           await visual.getByRole("button", { name: "停止预览", exact: true }).click();
           await expect(visual.locator(".space-meteor")).toHaveCount(0);
-          await visual.getByRole("button", { name: "关闭星空设置", exact: true }).click();
+          await visual.getByRole("button", { name: "取消", exact: true }).click();
+          await visual.locator('.side-nav-menu a[href="/"]').click();
+          await expect(visual.locator(".video-card")).toHaveCount(8);
         }
         for (const width of [320, 375]) {
           await visual.setViewportSize({ width, height: 900 });
-          await visual.getByRole("button", { name: "星空动效设置", exact: true }).click();
+          await openSpaceSettings(visual);
           await visual.getByRole("tab", { name: "流星雨", exact: true }).click();
           await visual.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition).forEach(animation => animation.finish()));
           await visual.getByRole("button", { name: "立即预览流星雨", exact: true }).click();
@@ -459,7 +466,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
           assert.equal(await visual.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
           assert.equal(await visual.locator("dialog[data-space-settings]").evaluate(node => node.scrollWidth <= node.clientWidth), true);
           await visual.screenshot({ path: `${evidence}/space-settings-shower-mobile-${width}.png`, animations: "allow" });
-          await visual.getByRole("button", { name: "关闭星空设置", exact: true }).click();
+          await visual.getByRole("button", { name: "取消", exact: true }).click();
         }
       } finally {
         // Playwright 的 clock 属于整个 context，不能把后续实时时间线留在暂停态。
@@ -481,21 +488,20 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       const time = await craft.evaluate(node => Number(node.getAnimations()[0]?.currentTime ?? -1));
       await expect.poll(() => craft.evaluate(node => Number(node.getAnimations()[0]?.currentTime ?? -1))).toBeGreaterThan(time + 100);
       await page.screenshot({ path: `${evidence}/satellite-empty-dark.png`, animations: "allow" });
-      const toggle = page.getByRole("button", { name: "动态星空", exact: true });
-      await toggle.click();
+      await setSpaceEnabled(page, false);
       await expect(craft).toHaveCSS("animation-name", "none");
       await expect(art.locator(".satellite-beacon")).toHaveCSS("animation-name", "none");
       await expect(page.locator(".space-meteors-foreground")).toHaveCSS("visibility", "hidden");
       await expect(page.locator(".space-meteor")).toHaveCount(0);
       await expect(art).toBeVisible();
-      await toggle.click();
+      await setSpaceEnabled(page, true);
       await page.goto(`${origin}/upload`);
       await expect(page.locator(".pending-upload-empty > .satellite-illustration")).toBeVisible();
       await expect(page.locator(".pending-upload-empty .satellite-craft")).toHaveCSS("animation-name", "satellite-hover");
       await page.screenshot({ path: `${evidence}/satellite-upload-dark.png`, animations: "allow" });
     });
 
-    await t.test("mobile renders only 28 stars, reduces meteors and keeps both appearance controls reachable", async () => {
+    await t.test("mobile renders only 28 stars, reduces meteors and keeps page-management controls reachable", async () => {
       for (const width of [320, 375]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(origin);
@@ -503,8 +509,12 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
         await expect(page.locator(".space-meteors-foreground")).toHaveCSS("display", "none");
         await expect.poll(() => page.locator(".space-meteors-background .space-meteor").count()).toBeGreaterThan(0);
         assert.ok(await page.locator(".space-meteors-background .space-meteor").count() <= 4);
-        await expect(page.getByRole("button", { name: "动态星空", exact: true })).toBeInViewport();
-        await expect(page.getByRole("button", { name: "浅色", exact: true })).toBeInViewport();
+        await expect(page.locator('.bottom-nav a[href="/pages"]')).toBeInViewport();
+        await openSpaceSettings(page);
+        await expect(page.getByRole("checkbox", { name: /^启用动态星空/ })).toBeInViewport();
+        await expect(page.getByRole("button", { name: "保存星空设置", exact: true })).toBeInViewport();
+        await page.getByRole("button", { name: "取消", exact: true }).click();
+        await page.locator('.bottom-nav a[href="/"]').click();
         await assertWidth();
         if (width === 375) await page.screenshot({ path: `${evidence}/mobile-motion-dark.png` });
       }
@@ -514,10 +524,9 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       await page.addInitScript(() => Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("Storage denied", "SecurityError"); } }));
       await page.reload();
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "on");
-      const toggle = page.getByRole("button", { name: "动态星空", exact: true });
-      await toggle.click();
+      await setSpaceEnabled(page, false, true);
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off");
-      await toggle.click();
+      await setSpaceEnabled(page, true, true);
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "on");
     });
     assert.deepEqual(errors, []);

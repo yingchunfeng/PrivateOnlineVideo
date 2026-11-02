@@ -61,7 +61,7 @@ test("公共页面配置、上传/登记/编辑与原生播放器，不调用私
       return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "NOT_FOUND" } }) });
     });
     await page.goto(origin);
-    try { await expect(page.locator(".category-tabs button")).toHaveText(["全部视频", "首类", "空类", "筛选"]); }
+    try { await expect(page.locator(".category-tabs button")).toHaveText(["全部视频", "首类", "空类"]); }
     catch (error) { console.error("Fixture API paths:", paths, "Page:", await page.locator("body").innerText()); throw error; }
     await expect(page.locator(".video-card")).toHaveCount(12);
     await page.getByRole("button", { name: "下一页", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(2);
@@ -77,16 +77,16 @@ test("公共页面配置、上传/登记/编辑与原生播放器，不调用私
     await page.getByRole("button", { name: "编辑信息", exact: true }).click(); await page.getByLabel("视频标题", { exact: true }).fill("编辑后的页面样例"); await page.getByRole("checkbox", { name: "旅行", exact: true }).uncheck(); await page.getByRole("button", { name: "保存视频信息", exact: true }).click();
     await expect(page.locator("h1")).toHaveText("编辑后的页面样例"); assert.ok(mutations.some(entry => entry.path.startsWith("/api/videos/") && entry.body.title === "编辑后的页面样例" && JSON.stringify(entry.body.tags) === JSON.stringify(["逗号,标签"])));
     await video.evaluate(node => { Object.defineProperty(node, "error", { configurable: true, value: { code: 4 } }); node.dispatchEvent(new Event("error")); });
-    await expect(page.locator(".player-section [role=alert]")).toContainText("当前浏览器无法播放"); await expect(page.locator(".player-section").getByRole("link", { name: "打开原地址", exact: true })).toHaveAttribute("href", /oss\.meetdawn\.top/);
-    await page.goto(origin); await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); const register = page.locator(".import-panel");
+    await expect(page.locator(".player-section [role=alert]").filter({ hasText: "当前浏览器无法播放" })).toBeVisible(); await expect(page.locator(".player-section").getByRole("link", { name: "打开原地址", exact: true })).toHaveAttribute("href", /oss\.meetdawn\.top/);
+    await page.goto(`${origin}/upload`); await page.getByRole("button", { name: "导入已有视频", exact: true }).click(); const register = page.getByRole("dialog", { name: "导入已有视频", exact: true });
     await register.getByLabel("公开视频地址", { exact: true }).fill("https://oss.meetdawn.top/onlineVideo/existing.webm"); await register.getByLabel("视频标题", { exact: true }).fill("登记样例"); await register.getByRole("checkbox", { name: "旅行", exact: true }).check(); await register.getByRole("button", { name: "登记公开视频", exact: true }).click(); await expect(page.locator(".toast-stack").getByText("公开视频已登记", { exact: true })).toBeVisible();
     await page.goto(`${origin}/upload`); await expect(page.getByLabel("视频文件", { exact: true })).toBeEnabled(); await page.getByLabel("视频文件", { exact: true }).setInputFiles({ name: "sample.webm", mimeType: "video/webm", buffer: media });
     await page.locator("input.sci-input").fill("上传页面样例"); await page.locator("select.sci-select").selectOption("zeta"); await page.locator(".tag-chips-matrix .tag-chip").filter({ hasText: "旅行" }).click(); await page.locator(".save-action-btn").click();
     await expect(page).toHaveURL(/\/tasks$/); await expect(page.getByRole("alert")).toContainText("视频对象已上传"); await expect(page.getByText("视频已登记，封面待补", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "重试完成确认", exact: true }).click(); await expect(page.getByText("视频已登记，封面待补", { exact: true })).toBeVisible(); await expect(page.locator(".upload-task-card input[aria-label=公共地址]")).toHaveValue("https://oss.meetdawn.top/onlineVideo/zeta/uploaded.webm");
-    await page.locator(".upload-task-card").getByRole("link", { name: "播放视频", exact: true }).click(); await expect(page.locator("video")).toHaveAttribute("src", "https://oss.meetdawn.top/onlineVideo/zeta/uploaded.webm");
+    await page.getByRole("button", { name: "重试完成确认", exact: true }).click(); await expect(page.getByText("视频已登记，封面待补", { exact: true })).toBeVisible(); await page.locator(".upload-task-row").getByRole("button", { name: "查看详情", exact: true }).click(); const taskDetails = page.getByRole("dialog", { name: "任务详情", exact: true }); await expect(taskDetails.getByLabel("公共地址", { exact: true })).toHaveValue("https://oss.meetdawn.top/onlineVideo/zeta/uploaded.webm");
+    await taskDetails.getByRole("link", { name: "播放视频", exact: true }).click(); await expect(page.locator("video")).toHaveAttribute("src", "https://oss.meetdawn.top/onlineVideo/zeta/uploaded.webm");
     await page.goto(`${origin}/?q=${encodeURIComponent("逗号,标签")}`); await expect.poll(() => page.locator(".video-card").count()).toBeGreaterThan(0);
-    await page.goto(`${origin}/categories`); await expect(page.locator(".cfg-name-input")).toHaveCount(2); await page.getByLabel("显示已删除分类").check(); await expect(page.locator(".cfg-name-input")).toHaveCount(3); await expect(page.getByLabel("重命名分类 停用类")).toHaveValue("停用类"); await expect(page.locator("[data-category-id=old] .cfg-state-tag")).toHaveText("已删除"); await expect(page.getByText("分组", { exact: true })).toHaveCount(0);
+    await page.goto(`${origin}/categories`); await expect(page.locator("[data-category-id]")).toHaveCount(2); await expect(page.locator("tbody input")).toHaveCount(0); await page.getByLabel("显示已删除分类").check(); await expect(page.locator("[data-category-id]")).toHaveCount(3); await expect(page.locator("[data-category-id=old]")).toContainText("停用类"); await expect(page.locator("[data-category-id=old] .management-state")).toHaveText("已删除"); await expect(page.getByText("分组", { exact: true })).toHaveCount(0);
     await page.goto(`${origin}/security`); await expect(page.getByRole("heading", { name: "账户安全", exact: true })).toBeVisible();
     assert.equal(paths.some(path => /playback-sessions|heartbeat|\/source$|\/stream$|download-authorizations|\/settings\/usage$|\/groups/.test(path)), false);
     await context.close();

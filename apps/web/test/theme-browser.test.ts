@@ -9,6 +9,7 @@ import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
 import { themeStorageKey } from "../src/theme";
+import { fixtureSiteSettings, selectPersonalTheme } from "./page-settings-helpers";
 
 const evidence = fileURLToPath(new URL(`../../../.local/acceptance/theme-${randomUUID()}/`, import.meta.url));
 const mediaOrigin = "https://theme-media.example";
@@ -33,6 +34,7 @@ async function installFixture(context: BrowserContext, origin: string, mode = "r
       case "/api/library": return ok({ mediaBaseUrl: mediaOrigin, objectPrefix: "media/", categories: [{ id: "space", name: "星际", tags: ["宇宙"] }] });
       case "/api/library/configuration": return ok({ version: "theme-v1", writable: true, categories: [{ id: "space", name: "星际", enabled: true, isDefault: true, tagIds: ["universe"], videoCount: 1, uploadCount: 0 }], tags: [{ id: "universe", name: "宇宙", enabled: true, categoryIds: ["space"], videoCount: 1, uploadCount: 0 }] });
       case "/api/settings/limits": return ok({ maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
+      case "/api/settings/site": return ok(fixtureSiteSettings);
       case "/api/videos": return ok({ items: [video], total: 1, page: 1, pageSize: 12 });
       case "/api/videos/theme-video": return ok(video);
       case "/api/videos/theme-video/progress": return ok({ videoId: video.id, positionSeconds: 0, updatedAt: null });
@@ -45,7 +47,6 @@ async function installFixture(context: BrowserContext, origin: string, mode = "r
 
 async function verifyTheme(page: Page, theme: "light" | "dark") {
   await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-  await expect(page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true })).toHaveAttribute("aria-pressed", "true");
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), theme);
   assert.equal(await page.locator("body").evaluate(node => getComputedStyle(node).backgroundColor), theme === "light" ? "rgb(255, 255, 255)" : "rgb(8, 12, 20)");
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", theme === "light" ? "#ffffff" : "#080c14");
@@ -64,7 +65,7 @@ async function verifyWidth(page: Page) {
 }
 
 test("light/dark theme: isolated browser acceptance, no real API or storage service", { timeout: 120000 }, async t => {
-  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, strictPort: true } });
+  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), cacheDir: `${evidence}/vite-cache`, mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, strictPort: true, watch: null, hmr: false } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
     await server.listen();
@@ -86,26 +87,25 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
       await expect(page.locator(".video-card")).toHaveCount(1);
       await verifyTheme(page, "light");
       await expect(page.locator(".theme-toolbar")).toBeHidden();
-      await expect(page.locator(".side-theme")).toBeVisible();
+      await expect(page.locator(".side-theme")).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "系统主菜单" }).getByRole("link", { name: "页面管理", exact: true })).toBeVisible();
       await verifyWidth(page);
       await page.screenshot({ path: `${evidence}/desktop-library-light.png`, fullPage: true });
-      const dark = page.getByRole("button", { name: "深色", exact: true });
-      await dark.focus();
-      await page.keyboard.press("Enter");
+      await selectPersonalTheme(page, "dark");
       await verifyTheme(page, "dark");
       assert.equal(await page.evaluate(key => localStorage.getItem(key), themeStorageKey), "dark");
       await page.reload();
       await expect(page.locator(".video-card")).toHaveCount(1);
       await verifyTheme(page, "dark");
       await page.screenshot({ path: `${evidence}/desktop-library-dark.png`, fullPage: true });
-      await page.getByRole("button", { name: "浅色", exact: true }).click();
+      await selectPersonalTheme(page, "light");
     });
 
     await t.test("tabs synchronize only the local theme preference, including removal", async () => {
       const other = await context.newPage();
       await other.goto(origin);
       await expect(other.locator(".video-card")).toHaveCount(1);
-      await page.getByRole("button", { name: "深色", exact: true }).click();
+      await selectPersonalTheme(page, "dark");
       await verifyTheme(other, "dark");
       await other.evaluate(key => sessionStorage.setItem(key, "light"), themeStorageKey);
       await verifyTheme(page, "dark");
@@ -117,7 +117,7 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
     await t.test("pages, native player, forms and dialog retain readable theme surfaces", async () => {
       const routes = [["/upload", "上传 / 编辑视频"], ["/tasks", "任务列表"], ["/categories", "配置管理"], ["/settings", "系统设置"], ["/security", "账户安全"], ["/videos/theme-video", "星际旅行 · 观测记录"]];
       for (const theme of ["light", "dark"] as const) {
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         for (const [path, title] of routes) {
           await page.goto(`${origin}${path}`);
           await expect(page.getByRole("heading", { name: title!, level: 1, exact: true })).toBeVisible();
@@ -130,9 +130,9 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
         assert.equal(await page.locator(".player-frame").evaluate(node => getComputedStyle(node).backgroundColor), "rgb(2, 6, 23)");
         await page.getByRole("button", { name: "编辑信息", exact: true }).click();
         await page.getByLabel("视频标题", { exact: true }).fill("未保存的主题检查");
-        await page.getByRole("button", { name: theme === "light" ? "深色" : "浅色", exact: true }).click();
+        await selectPersonalTheme(page, theme === "light" ? "dark" : "light");
         await expect(page.getByLabel("视频标题", { exact: true })).toHaveValue("未保存的主题检查");
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         await page.goto(`${origin}/security`);
         await page.emulateMedia({ reducedMotion: "no-preference" });
         await page.getByRole("button", { name: "撤销当前会话", exact: true }).click();
@@ -152,16 +152,17 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
       }
     });
 
-    await t.test("mobile and tablet keep a visible switch, readable surfaces and no overflow", async () => {
+    await t.test("mobile and tablet keep page management reachable, readable surfaces and no overflow", async () => {
       for (const width of [375, 768]) {
         await page.setViewportSize({ width, height: 900 });
         for (const theme of ["light", "dark"] as const) {
           await page.goto(origin);
           await expect(page.locator(".video-card")).toHaveCount(1);
-          await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+          await selectPersonalTheme(page, theme);
           await verifyTheme(page, theme);
-          await expect(page.locator(".theme-toolbar")).toBeVisible();
+          await expect(page.locator(".theme-toolbar")).toHaveCount(0);
           await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
+          await expect(page.locator('.bottom-nav a[href="/pages"]')).toBeInViewport();
           await verifyWidth(page);
           await page.screenshot({ path: `${evidence}/library-${width}-${theme}.png`, fullPage: true });
           await page.goto(`${origin}/upload`);
@@ -172,7 +173,7 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
       await page.setViewportSize({ width: 1024, height: 720 });
       await page.goto(origin);
       await expect(page.locator(".video-card")).toHaveCount(1);
-      await page.getByRole("button", { name: "浅色", exact: true }).click();
+      await selectPersonalTheme(page, "light");
       await verifyTheme(page, "light");
       await page.locator(".side-dock-footer").scrollIntoViewIfNeeded();
       await expect(page.locator(".side-dock-footer")).toBeInViewport();
@@ -180,7 +181,7 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
       await verifyWidth(page);
     });
 
-    await t.test("login and setup expose theme control; inaccessible storage does not break toggling", async () => {
+    await t.test("login and setup preserve the login-before theme boundary; inaccessible storage does not break loading", async () => {
       for (const mode of ["login", "setup"]) {
         const isolated = await browser!.newContext({ viewport: { width: 375, height: 812 } });
         await installFixture(isolated, origin, mode);
@@ -192,10 +193,10 @@ test("light/dark theme: isolated browser acceptance, no real API or storage serv
         await tab.goto(origin);
         await expect(tab.getByRole("heading", { name: mode === "login" ? "安全登录" : "云影匣 · 首次设置" })).toBeVisible();
         await verifyTheme(tab, "light");
-        await tab.getByRole("button", { name: "深色", exact: true }).click();
-        await verifyTheme(tab, "dark");
+        await expect(tab.getByRole("button", { name: "深色", exact: true })).toHaveCount(0);
+        await expect(tab.getByRole("button", { name: "星空动效设置", exact: true })).toHaveCount(0);
         await verifyWidth(tab);
-        await tab.screenshot({ path: `${evidence}/${mode}-shared-background-dark.png`, fullPage: true });
+        await tab.screenshot({ path: `${evidence}/${mode}-shared-background-light.png`, fullPage: true });
         await isolated.close();
       }
     });

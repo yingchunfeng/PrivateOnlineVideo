@@ -6,8 +6,10 @@ import { UploadQueue } from "./upload-queue";
 
 const Context = createContext<UploadQueue | undefined>(undefined);
 export function UploadQueueProvider({ children }: { children: ReactNode }) {
-  const ownerId = useAuth().session?.user.id;
-  const queue = useMemo(() => new UploadQueue(api), [ownerId]);
+  const auth = useAuth();
+  const ownerId = auth.session?.guest?.id ?? auth.session?.user.id;
+  const canUpload = auth.can("upload");
+  const queue = useMemo(() => new UploadQueue(api), [ownerId, canUpload]);
   useEffect(() => () => queue.stop(), [queue]);
   return <Context.Provider value={queue}>{children}</Context.Provider>;
 }

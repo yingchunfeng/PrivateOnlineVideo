@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import { objectKeyFromPublicUrl } from "../../core/library-config.js";
 import { createLibraryConfiguration } from "../../core/library-configuration.js";
 import type { SaveLibraryConfigurationRequest } from "@online-video/shared";
+import { createSiteSettings } from "../site-settings/service.js";
+import { assertGuestRequest } from "../../core/guest-access.js";
 
 export interface BackendDependencies { database: AppDatabase; auth: AuthGuard; config: AppConfig; now?: () => Date }
 function body(value: unknown, allowed: string[]): Record<string, unknown> {
@@ -18,6 +20,7 @@ function body(value: unknown, allowed: string[]): Record<string, unknown> {
 /** 使用真实SQL和同一AuthGuard；以owner绑定，已有地址仅接受配置媒体域名及授权前缀。 */
 export async function registerBackendModule(app: FastifyInstance, deps: BackendDependencies) {
   const repos = createRepositories(deps.database, deps.now ?? (() => new Date()), deps.config.library);
+  const siteSettings = createSiteSettings(deps.database, deps.config, deps.now);
   const configuration = deps.config.library ? createLibraryConfiguration(deps.database, deps.config.library, deps.config.libraryConfigPath, deps.now) : null;
   const editable = (ownerId: string): SaveLibraryConfigurationRequest => {
     const current = configuration!.view(ownerId);
@@ -61,7 +64,7 @@ export async function registerBackendModule(app: FastifyInstance, deps: BackendD
         const request = editable(auth.user.id); request.version = input.version as string;
         if (entity === "categories") {
           if (input.sortOrder !== undefined && (!Number.isSafeInteger(input.sortOrder) || (input.sortOrder as number) < 0 || (input.sortOrder as number) > request.categories.length)) throw new HttpError("VALIDATION_ERROR");
-          request.categories.splice((input.sortOrder as number | undefined) ?? request.categories.length, 0, { name: input.name, enabled: true, tagIds: [] });
+          request.categories.splice((input.sortOrder as number | undefined) ?? request.categories.length, 0, { name: input.name, enabled: true, tagIds: request.tags.filter(tag => tag.enabled).map(tag => tag.id!) });
         } else request.tags.push({ name: input.name, enabled: true });
         const saved = configuration.save(auth.user.id, { ...request, ...(input.confirmImpact === undefined ? {} : { confirmImpact: input.confirmImpact as boolean }) });
         return { data: (entity === "categories" ? saved.categories : saved.tags).find(item => item.name === (input.name as string).normalize("NFKC").trim()) };
@@ -99,6 +102,7 @@ export async function registerBackendModule(app: FastifyInstance, deps: BackendD
     if (typeof input.title !== "string" || !input.title.trim() || input.title.length > 256 || typeof input.categoryId !== "string") throw new HttpError("VALIDATION_ERROR");
     const objectKey = objectKeyFromPublicUrl(config, input.publicUrl);
     const selection = await repos.organizations.normalizeSelection(auth.user.id, { categoryId: input.categoryId, ...(input.tags === undefined ? {} : { tags: input.tags as string[] }) });
+    assertGuestRequest(request);
     const record = await repos.videos.register({ ownerId: auth.user.id, originalObject: { kind: "legacy", key: objectKey }, playbackObject: { kind: "legacy", key: objectKey }, thumbnailObject: null,
       video: { id: randomUUID(), title: input.title.trim(), ...selection, durationSeconds: null, sizeBytes: 0, status: "processing", thumbnailUrl: null,
         createdAt: (deps.now?.() ?? new Date()).toISOString(), codec: null, width: null, height: null, playable: false, lastPositionSeconds: 0 } });
@@ -112,10 +116,30 @@ export async function registerBackendModule(app: FastifyInstance, deps: BackendD
     const auth = await deps.auth.requireUser(request, { mutation: true }); const patch = body(request.body, deps.config.library ? ["title", "categoryId", "tags"] : ["title", "categoryId", "groupIds", "tagIds"]);
     return { data: await repos.catalog.update(auth.user.id, request.params.videoId, patch as UpdateVideoRequest) };
   });
+  app.put<{ Params: { videoId: string } }>("/api/videos/:videoId/duration", async request => {
+    const auth = await deps.auth.requireUser(request, { mutation: true });
+    const input = body(request.body, ["durationSeconds", "expectedObjectKey"]);
+    const record = await repos.videos.saveDurationIfMissing!(auth.user.id, request.params.videoId,
+      { durationSeconds: input.durationSeconds as number, expectedObjectKey: input.expectedObjectKey as string });
+    return { data: record.video };
+  });
+  app.delete<{ Params: { videoId: string } }>("/api/videos/:videoId", async request => {
+    const auth = await deps.auth.requireUser(request, { mutation: true });
+    if (body(request.body, ["confirm"]).confirm !== true) throw new HttpError("VALIDATION_ERROR");
+    const result = await repos.videos.deleteOwnedRecord!(auth.user.id, request.params.videoId);
+    return { data: { ...result, objects: result.objects.map(object => ({ ...object,
+      bucket: object.bucket ?? (object.publicUrl && deps.config.library ? deps.config.oss?.bucket ?? null : null) })) } };
+  });
+  app.get("/api/settings/site", async request => {
+    await deps.auth.requireUser(request, { mutation: false }); return { data: siteSettings.view() };
+  });
+  app.patch("/api/settings/site", async request => {
+    await deps.auth.requireUser(request, { mutation: true }); return { data: siteSettings.save(request.body) };
+  });
   app.get("/api/settings/limits", async request => {
     await deps.auth.requireUser(request, { mutation: false }); const media = deps.config.media;
     if (!media || (!deps.config.library && deps.config.maxPlaybackSessions === null)) throw new HttpError("SERVICE_NOT_CONFIGURED");
-    return { data: { maxUploadBytes: media.maxUploadBytes, partSizeBytes: media.partSizeBytes, maxUploadConcurrency: media.maxUploadConcurrency,
+    return { data: { maxUploadBytes: siteSettings.view().maxUploadBytes, partSizeBytes: media.partSizeBytes, maxUploadConcurrency: media.maxUploadConcurrency,
       maxPlaybackSessions: deps.config.maxPlaybackSessions ?? 0, maxAuthorizationsPerMinute: deps.config.library ? 0 : media.maxAuthorizationsPerMinute,
       uploadObjectPrefix: deps.config.library?.objectPrefix ?? media.uploadObjectPrefix ?? `${media.objectPrefix}originals/` } };
   });

@@ -5,6 +5,17 @@
 .video-editor-fields label { min-width: 0; }
 .video-editor-fields input, .video-editor-fields select { width: 100%; }
 .video-editor-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.video-edit-dialog .video-editor { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.video-editor > fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.video-editor-cover { display: flex; align-items: start; gap: 16px; min-width: 0; }
+.video-editor-cover img { width: 144px; max-width: 35%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; }
+.video-editor-cover > div { min-width: 0; flex: 1; }
+.video-editor-cover input { max-width: 100%; }
+.video-editor-danger { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 12px; }
+.video-editor-danger p { line-height: 1.7; color: var(--muted); font-size: 13px; }
+.video-object-manifest { width: 100%; resize: vertical; min-height: 180px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: monospace; font-size: 13px; }
+.video-duration-feedback { display: grid; justify-items: start; gap: 8px; margin-top: 10px; }
+.video-duration-feedback .notice { margin: 0; }
 @media (max-width: 640px) {
   .video-editor-fields { grid-template-columns: minmax(0, 1fr); }
   .video-editor-actions > button { flex: 1; }

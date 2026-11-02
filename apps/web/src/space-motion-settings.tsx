@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useSpaceMeteors } from "./space-meteors";
+import { effectiveSpaceSettings, normalizeSpaceSettings } from "./space-meteor-settings";
+import { Modal } from "./ui";
 import type { SpaceEffectsSettings } from "./space-meteor-settings";
 
 type Mode = "normal" | "shower";
@@ -13,7 +14,7 @@ function NumberSetting({ label, value, min, max, step = 1, unit, onChange }: { l
   const invalid = draft.trim() === "" || !Number.isFinite(Number(draft)) || Number(draft) < min || Number(draft) > max;
   return <div className="space-number-setting"><label htmlFor={id}>{label}<small id={`${id}-unit`}>{unit}</small></label><div className="space-number-inputs">
     <input type="range" aria-label={`${label}滑块`} min={min} max={max} step={step} value={value} onChange={event => onChange(Number(event.target.value))} />
-    <input id={id} type="number" inputMode="decimal" aria-label={label} aria-describedby={`${id}-unit`} min={min} max={max} step={step} value={draft} aria-invalid={invalid} onChange={event => { const raw = event.target.value; setDraft(raw); const number = Number(raw); if (raw.trim() && Number.isFinite(number) && number >= min && number <= max) onChange(number); }} onBlur={() => setDraft(String(value))} />
+    <input id={id} type="number" inputMode="decimal" aria-label={label} aria-describedby={`${id}-unit`} min={min} max={max} step="any" required value={draft} aria-invalid={invalid} onChange={event => { const raw = event.target.value; setDraft(raw); const number = Number(raw); if (raw.trim() && Number.isFinite(number) && number >= min && number <= max) onChange(number); }} onBlur={() => setDraft(String(value))} />
   </div>{invalid && <small className="space-field-error">请输入 {min}～{max} {unit}；无效值不会保存。</small>}</div>;
 }
 
@@ -21,28 +22,29 @@ function ToggleSetting({ label, checked, onChange, note }: { label: string; chec
   return <label className="space-checkbox-setting"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /><span>{label}{note && <small>{note}</small>}</span></label>;
 }
 
-export function SpaceMotionSettings({ enabled, reduced, onClose }: { enabled: boolean; reduced: boolean; onClose: () => void }) {
-  const { settings, updateSettings, resetSettings, preview, stopPreview, previewMode, device, effective, storageAvailable } = useSpaceMeteors();
+export function SpaceMotionSettings({ enabled, reduced, preferred = enabled, onSaveEnabled, onClose }: { enabled: boolean; reduced: boolean; preferred?: boolean; onSaveEnabled?: (next: boolean) => void; onClose: () => void }) {
+  const { settings: stored, updateSettings, preview, stopPreview, previewMode, device, storageAvailable } = useSpaceMeteors();
+  const [settings, setSettings] = useState(stored);
+  const [enabledDraft, setEnabledDraft] = useState(preferred);
+  const effective = effectiveSpaceSettings(settings, device);
+  const updateDraft = (next: SpaceEffectsSettings) => setSettings(normalizeSpaceSettings(next));
   const [tab, setTab] = useState<Mode | "other">("normal");
-  const dialog = useRef<HTMLDialogElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
   const stop = useRef(stopPreview); stop.current = stopPreview;
-  const titleId = useId(); const descriptionId = useId(); const panelId = useId();
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const node = dialog.current;
-    node?.showModal(); closeButton.current?.focus();
-    return () => { stop.current(); node?.close(); if (opener?.isConnected) opener.focus(); };
-  }, []);
-  const updateMode = <M extends Mode, K extends keyof SpaceEffectsSettings[M]>(mode: M, key: K, value: SpaceEffectsSettings[M][K]) => updateSettings({ ...settings, [mode]: { ...settings[mode], [key]: value } });
-  const updateOther = (key: keyof SpaceEffectsSettings["other"], value: boolean) => updateSettings({ ...settings, other: { ...settings.other, [key]: value } });
+  const panelId = useId();
+  useEffect(() => () => stop.current(), []);
+  const updateMode = <M extends Mode, K extends keyof SpaceEffectsSettings[M]>(mode: M, key: K, value: SpaceEffectsSettings[M][K]) => updateDraft({ ...settings, [mode]: { ...settings[mode], [key]: value } });
+  const updateOther = (key: keyof SpaceEffectsSettings["other"], value: boolean) => updateDraft({ ...settings, other: { ...settings.other, [key]: value } });
   const mode = tab === "other" ? "normal" : tab;
   const values = settings[mode];
   const number = (key: keyof typeof values, label: string, min: number, max: number, unit: string, step = 1) => <NumberSetting key={`${mode}-${key}`} label={label} value={values[key] as number} min={min} max={max} unit={unit} step={step} onChange={value => updateMode(mode, key, value)} />;
   const tabs = [["normal", "普通流星"], ["shower", "流星雨"], ["other", "其他动效"]] as const;
-  return createPortal(<dialog ref={dialog} data-space-settings="true" className="space-settings-dialog" aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { event.preventDefault(); onClose(); }}>
-    <header className="space-settings-header"><div><div className="eyebrow">ATMOSPHERE CONTROL</div><h2 id={titleId}>星空动效设置</h2></div><button ref={closeButton} type="button" className="secondary space-settings-close" aria-label="关闭星空设置" onClick={onClose}>关闭</button></header>
-    <p id={descriptionId} className="space-settings-intro">即改即生效，自动记在此浏览器。预览与全站共用一个调度器，不叠加发射。</p>
+  return <Modal title="星空动效设置" description="保留此浏览器已有配置。保存后生效；取消不会改动配置。预览共用原调度器，不叠加发射。" onClose={onClose} className="space-settings-editor" spaceSettings footer={<>
+    <div className="space-preview-actions"><button type="button" className="secondary" disabled={!enabled} onClick={() => preview("normal", settings)}>预览普通流星</button><button type="button" disabled={!enabled} onClick={() => preview("shower", settings)}>立即预览流星雨</button><button type="button" className="secondary" disabled={!previewMode} onClick={stopPreview}>停止预览</button></div>
+    <div className="space-settings-footer-meta"><span role="status">{previewMode === "shower" ? "流星雨预览中 · 自然退场后恢复普通模式" : previewMode === "normal" ? "普通流星预览中" : "预览仍遵守播放、后台、输入与设备限制"}</span><button type="button" className="space-reset-button" onClick={() => { stopPreview(); setSettings(normalizeSpaceSettings(null)); setEnabledDraft(true); }}>恢复默认值</button></div>
+    <div className="space-editor-actions"><button type="button" className="secondary" onClick={onClose}>取消</button><button type="submit" form="space-editor-form">保存星空设置</button></div>
+  </>}>
+    <form id="space-editor-form" onSubmit={event => { event.preventDefault(); updateSettings(settings); onSaveEnabled?.(enabledDraft); onClose(); }}>
+    {onSaveEnabled && <ToggleSetting label="启用动态星空" checked={enabledDraft} onChange={setEnabledDraft} note="总开关与以下参数一起保存；系统减少动态效果仍具有更高优先级。" />}
     {reduced ? <p className="notice compact-notice space-settings-state" role="status">系统已启用减少动态效果。设置仍可编辑保存，但动画和预览当前不会播放。</p> : !enabled ? <p className="notice compact-notice space-settings-state" role="status">动态星空已关闭。设置仍可保存；请先关闭面板并开启动态星空再预览。</p> : <p className="space-settings-state muted">播放视频、进入后台或打开业务弹窗时自动停止；输入时隐藏前景并暂停自动流星雨判断。</p>}
     {!storageAvailable && <p className="notice warning compact-notice" role="status">浏览器存储受限，本页设置可用，但无法保证刷新保留或跨标签页同步。</p>}
     <div className="space-settings-tabs" role="tablist" aria-label="星空设置分组">{tabs.map(([key, text], index) => <button key={key} type="button" role="tab" id={`${panelId}-${key}`} aria-selected={tab === key} aria-controls={panelId} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)} onKeyDown={event => {
@@ -84,6 +86,6 @@ export function SpaceMotionSettings({ enabled, reduced, onClose }: { enabled: bo
       </>}
       <section className="space-device-limits" aria-label="设备实际生效设置"><h3>{device.kind === "mobile" ? "手机节能模式" : device.kind === "constrained" ? "低功耗设备模式" : "桌面模式"} · 实际生效</h3><p>设备硬上限 {device.hardLimit} 条；普通同屏 ≤ {effective.normal.maxVisible} 条，流星雨 ≤ {effective.shower.maxVisible} 条。{device.foreground ? "前景遵守各自开关与比例。" : "当前设备前景强制关闭。"}</p><p>普通每批 {effective.normal.batchMin}～{effective.normal.batchMax} 条，间隔 {effective.normal.intervalMin}～{effective.normal.intervalMax} 秒，尺寸 {effective.normal.sizeMin}～{effective.normal.sizeMax} 倍；流星雨每批 {effective.shower.batchMin}～{effective.shower.batchMax} 条，间隔 {effective.shower.intervalMin}～{effective.shower.intervalMax} 秒，尺寸 {effective.shower.sizeMin}～{effective.shower.sizeMax} 倍。</p><small>设备限制只降低实际效果，不覆盖你保存的偏好。</small></section>
     </div>
-    <footer className="space-settings-footer"><div className="space-preview-actions"><button type="button" className="secondary" disabled={!enabled} onClick={() => preview("normal")}>预览普通流星</button><button type="button" disabled={!enabled} onClick={() => preview("shower")}>立即预览流星雨</button><button type="button" className="secondary" disabled={!previewMode} onClick={stopPreview}>停止预览</button></div><div className="space-settings-footer-meta"><span role="status">{previewMode === "shower" ? "流星雨预览中 · 自然退场后恢复普通模式" : previewMode === "normal" ? "普通流星预览中" : "预览仍遵守播放、后台、输入与设备限制"}</span><button type="button" className="space-reset-button" onClick={resetSettings}>恢复默认值</button></div></footer>
-  </dialog>, document.body);
+    </form>
+  </Modal>;
 }

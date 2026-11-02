@@ -1,0 +1,41 @@
+.management-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0; min-width: 0; }
+.management-toolbar > * { min-width: 0; }
+.management-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.management-actions :is(button, .button) { min-height: 44px; padding: 7px 12px; font-size: .85rem; box-shadow: none; }
+.management-table-scroll { max-width: 100%; min-width: 0; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.management-table { width: 100%; border-collapse: collapse; text-align: left; font-size: .9rem; }
+.management-table :is(th, td) { padding: 14px 16px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+.management-table th { color: var(--text-secondary); font-size: .8rem; font-weight: 650; background: var(--surface-high); white-space: nowrap; }
+.management-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-high) 45%, transparent); }
+.management-table tbody tr:hover { background: var(--accent-surface); }
+.management-table tbody tr:last-child td { border-bottom: 0; }
+.management-table td > small { margin-top: 4px; }
+.management-table .archived { color: var(--text-secondary); }
+.management-tag, .management-state { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-high); color: var(--text-secondary); font-size: .78rem; line-height: 1.6; overflow-wrap: anywhere; }
+.management-state.active { color: var(--success); background: var(--success-surface); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+.management-form { display: grid; gap: 18px; min-width: 0; }
+.management-field { display: grid; gap: 8px; min-width: 0; }
+.management-field :is(input, select, textarea) { width: 100%; }
+.management-field-error { color: var(--error); font-size: .85rem; }
+.management-modal { width: min(640px, calc(100% - 24px)); max-width: calc(100% - 24px); max-height: calc(100dvh - 32px); margin: auto; padding: 0; overflow: hidden; color: var(--text); background: var(--surface-solid); border: 1px solid var(--border-glow); border-radius: 16px; box-shadow: var(--card-shadow); }
+.management-modal[open] { display: flex; flex-direction: column; }
+.management-modal::backdrop { background: rgba(2, 6, 23, .68); backdrop-filter: blur(4px); }
+:root:not([data-theme="dark"]) .management-modal::backdrop { background: rgba(24, 42, 64, .4); }
+.management-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+.management-modal-header > div { min-width: 0; }
+.management-modal-header h2 { margin: 0; color: var(--text); font-size: 1.15rem; }
+.management-modal-header p { margin: 8px 0 0; color: var(--text-secondary); font-size: .85rem; }
+.management-modal-close { flex-shrink: 0; width: 44px; min-height: 44px; padding: 0; font-size: 1.5rem; }
+.management-modal-body { min-height: 0; padding: 24px; overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.management-modal-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--border-subtle); background: var(--surface-solid); flex-shrink: 0; }
+.management-modal :is(input, select, textarea) { background: var(--surface-high); }
+.management-modal :is(.notice, fieldset) { min-width: 0; }
+@media (max-width: 600px) {
+  .management-toolbar { align-items: stretch; }
+  .management-table :is(th, td) { padding: 12px; }
+  .management-modal { max-height: calc(100dvh - 16px); border-radius: 12px; }
+  .management-modal-header { padding: 16px; gap: 10px; }
+  .management-modal-body { padding: 16px; }
+  .management-modal-footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
+  .management-modal-footer > :is(button, .button) { flex: 1; }
+}

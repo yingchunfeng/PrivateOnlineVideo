@@ -5,6 +5,14 @@
   min-width: 0;
 }
 
+.upload-submit-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.prepared-upload-page .upload-import-trigger { min-height: 44px; white-space: nowrap; }
+.upload-import-dialog .import-panel { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.upload-import-dialog .import-panel::before { display: none; }
+.upload-import-dialog .import-panel h2 { margin-top: 0; font-size: 1rem; }
+.upload-import-dialog .import-panel form { min-width: 0; }
+.upload-import-dialog .import-panel input { min-width: 0; }
+
 .prepared-upload-page .upload-header-bar,
 .prepared-upload-page .compact-notice {
   margin: 0 !important;
@@ -389,6 +397,9 @@
   .prepared-upload-page .upload-header-right {
     flex-wrap: wrap;
   }
+
+  .prepared-upload-page .upload-submit-actions { flex: 1; }
+  .prepared-upload-page .upload-submit-actions > button { flex: 1; }
 }
 
 @media (max-width: 600px) {
@@ -414,6 +425,9 @@
   .prepared-upload-page .save-action-btn {
     width: 100%;
   }
+
+  .prepared-upload-page .upload-submit-actions { width: 100%; flex-wrap: wrap; }
+  .prepared-upload-page .upload-submit-actions > button { flex-basis: 100%; }
 
   .upload-metadata-fields {
     grid-template-columns: minmax(0, 1fr);

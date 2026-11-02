@@ -39,6 +39,20 @@ export const uploadParts = sqliteTable("upload_parts", {
   uploadId: text("upload_id").notNull().references(() => uploadTasks.id), partNumber: integer("part_number").notNull(),
   sizeBytes: integer("size_bytes").notNull(), checksum: text("checksum").notNull(), etag: text("etag").notNull()
 }, table => [uniqueIndex("upload_part_number").on(table.uploadId, table.partNumber)]);
+export const guests = sqliteTable("guests", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id),
+  name: text("name").notNull(), passwordHash: text("password_hash").notNull(), permissions: text("permissions").notNull(),
+  expiresAt: text("expires_at").notNull(), revokedAt: text("revoked_at"), createdAt: text("created_at").notNull(),
+  version: integer("version").notNull().default(1)
+});
+export const guestSessions = sqliteTable("guest_sessions", {
+  loginSessionId: text("login_session_id").primaryKey().references(() => loginSessions.id),
+  guestId: text("guest_id").notNull().references(() => guests.id)
+});
+export const guestUploads = sqliteTable("guest_uploads", {
+  uploadId: text("upload_id").primaryKey().references(() => uploadTasks.id),
+  guestId: text("guest_id").notNull().references(() => guests.id)
+});
 export const watchProgress = sqliteTable("watch_progress", {
   ownerId: text("owner_id").notNull().references(() => users.id), videoId: text("video_id").notNull().references(() => videos.id),
   positionSeconds: real("position_seconds").notNull(), updatedAt: text("updated_at").notNull()
@@ -89,6 +103,11 @@ export const installationSessions = sqliteTable("installation_sessions", {
 });
 export const installationSettings = sqliteTable("installation_settings", {
   id: integer("id").primaryKey(), payloadCipher: text("payload_cipher").notNull(), version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull()
+});
+
+export const siteSettings = sqliteTable("site_settings", {
+  id: integer("id").primaryKey(), defaultTheme: text("default_theme", { enum: ["light", "dark"] }).notNull(),
+  maxUploadBytes: integer("max_upload_bytes").notNull(), version: integer("version").notNull(), updatedAt: text("updated_at").notNull()
 });
 export const emailVerificationChallenges = sqliteTable("email_verification_challenges", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id), loginSessionId: text("login_session_id").notNull().references(() => loginSessions.id),

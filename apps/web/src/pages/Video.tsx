@@ -1,22 +1,23 @@
-import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { UpdateVideoRequest, VideoDetail } from "@online-video/shared";
 import { api } from "../api";
-import { bytes, date, duration, ErrorNotice, Icon, Loading, useLoad, videoStatus } from "../ui";
-import { VideoPlayer } from "../player";
-import { loadOrganizations, OrganizationBadges, OrganizationFields, sameSelection } from "../organization";
+import { bytes, date, duration, videoDuration, ErrorNotice, Icon, Loading, useLoad } from "../ui";
+import { OrganizationFields, sameSelection } from "../organization";
 import type { Organizations } from "../organization";
-import { OriginalDownload } from "../download";
-import { loadLibrary, notifyLibraryChanged, TagBadges, TagChoice, useLibraryRevision } from "../library";
-import { libraryTags } from "../library-data";
+import { loadLibrary, notifyLibraryChanged, TagBadges, useLibraryRevision } from "../library";
 import { PublicVideoPlayer } from "../public-player";
 import { PublicAddress } from "../public-address";
-import type { LibraryConfig } from "@online-video/shared";
-import { useFeedback } from "../feedback";
 import "./video-editor.css";
+import { VideoEditorDialog } from "../video-editor";
+import { useAuth } from "../auth";
 
 export function VideoPage() {
+  const auth = useAuth(); const canManage = auth.can("video_edit") || auth.can("video_delete");
   const { videoId = "" } = useParams();
+  const navigate = useNavigate(); const playerContainer = useRef<HTMLDivElement>(null);
+  const [removed, setRemoved] = useState(false); const [savedDuration, setSavedDuration] = useState<{ id: string; seconds: number }>();
+  useEffect(() => { setRemoved(false); setSavedDuration(undefined); }, [videoId]);
   const [params, setParams] = useSearchParams();
   const libraryRevision = useLibraryRevision();
   const detail = useLoad(() => Promise.all([api.request<VideoDetail>(`/api/videos/${encodeURIComponent(videoId)}`), loadLibrary()]).then(([video, library]) => ({ video, ...library })), [videoId, libraryRevision]);
@@ -30,6 +31,8 @@ export function VideoPage() {
   if (detail.error) return <ErrorNotice error={detail.error} retry={detail.reload} />;
   if (!detail.data) return null;
   const { video, categories } = detail.data;
+  const editor = editing && canManage && <VideoEditorDialog videoId={video.id} library={detail.data} onClose={() => { if (removed) navigate("/", { replace: true }); else setEditing(false); }} onSaved={() => { setEditing(false); notifyLibraryChanged(); detail.reload(); }} onDeleted={() => setRemoved(true)} />;
+  if (removed) return editor;
   return (
     <>
       <div className="video-page-topbar">
@@ -40,27 +43,16 @@ export function VideoPage() {
         <span className="header-divider">|</span>
         <h1 className="video-header-title">{video.title}</h1>
         <div className="video-topbar-actions">
-          <button className="secondary" onClick={() => setEditing(!editing)} aria-expanded={editing} aria-controls="video-editor">
-            {editing ? "收起编辑" : "编辑信息"}
-          </button>
+          {canManage && <button className="secondary" onClick={() => { playerContainer.current?.querySelector("video")?.pause(); setEditing(true); }} aria-haspopup="dialog">
+            {auth.can("video_edit") ? "编辑信息" : "管理记录"}
+          </button>}
         </div>
       </div>
 
-      {editing && (
-        <VideoEditor
-          video={video}
-          library={detail.data}
-          onCancel={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            notifyLibraryChanged();
-            detail.reload();
-          }}
-        />
-      )}
+      {editor}
 
-      <div className="video-player-container">
-        <PublicVideoPlayer key={video.id} video={video} library={detail.data} />
+      <div className="video-player-container" ref={playerContainer}>
+        <PublicVideoPlayer key={video.id} video={video} library={detail.data} canSaveDuration={auth.can("video_edit")} onDurationSaved={saved => setSavedDuration({ id: saved.id, seconds: saved.durationSeconds! })} />
       </div>
 
       {/* 科技控制条：标题、标签与操作按钮（参考设计图第2幅） */}
@@ -109,7 +101,7 @@ export function VideoPage() {
           <div className="sci-data-cell">
             <span className="sci-data-label">时长</span>
             <span className="sci-data-value code">
-              {duration(video.durationSeconds)}
+              {videoDuration(savedDuration?.id === video.id ? savedDuration.seconds : video.durationSeconds)}
             </span>
           </div>
           <div className="sci-data-cell">
@@ -139,46 +131,4 @@ export function LegacyVideoEditor({ video, organizations, onSaved }: { video: Vi
   const [title, setTitle] = useState(video.title); const [category, setCategory] = useState(video.categoryId); const [groupIds, setGroupIds] = useState(video.groupIds ?? []); const [tagIds, setTagIds] = useState(video.tagIds ?? []); const [busy, setBusy] = useState(false); const [error, setError] = useState<unknown>();
   useEffect(() => { setTitle(video.title); setCategory(video.categoryId); setGroupIds(video.groupIds ?? []); setTagIds(video.tagIds ?? []); }, [video]);
   return <form className="panel stack section-space" onSubmit={async event => { event.preventDefault(); setBusy(true); setError(undefined); try { await api.request<VideoDetail>(`/api/videos/${encodeURIComponent(video.id)}`, { method: "PATCH", body: { title: title.trim(), ...(category !== video.categoryId ? { categoryId: category } : {}), ...(!sameSelection(groupIds, video.groupIds ?? []) ? { groupIds } : {}), ...(!sameSelection(tagIds, video.tagIds ?? []) ? { tagIds } : {}) } satisfies UpdateVideoRequest }); onSaved(); } catch (err) { setError(err); } finally { setBusy(false); } }}><h2>修改标题与组织信息</h2><label>视频标题<input value={title} onChange={e => setTitle(e.target.value)} maxLength={200} required disabled={busy} /></label><OrganizationFields organizations={organizations} category={category} groupIds={groupIds} tagIds={tagIds} onCategory={setCategory} onGroups={setGroupIds} onTags={setTagIds} disabled={busy} /><small>取消选择只解除关联，原视频保留。已归档关联可继续查看；修改同一维度前请取消归档项或恢复组织项。</small>{error !== undefined && <ErrorNotice error={error} />}<button disabled={busy || !title.trim()} type="submit">{busy ? "正在保存…" : "保存视频信息"}</button></form>;
-}
-
-function VideoEditor({ video, library, onSaved, onCancel }: { video: VideoDetail; library: LibraryConfig; onSaved: () => void; onCancel: () => void }) {
-  const [title, setTitle] = useState(video.title);
-  const [category, setCategory] = useState(video.categoryId);
-  const [tags, setTags] = useState(video.tags ?? []);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>();
-  const { toast, toastError } = useFeedback();
-  useEffect(() => { setTitle(video.title); setCategory(video.categoryId); setTags(video.tags ?? []); setError(undefined); }, [video]);
-  const selectedCategory = library.categories.find(item => item.id === category);
-  const availableTags = selectedCategory && selectedCategory.enabled !== false ? libraryTags(library.categories, category) : [];
-  return (
-    <form id="video-editor" className="panel stack video-editor" aria-labelledby="video-editor-title" aria-busy={busy} onSubmit={async event => {
-      event.preventDefault(); setBusy(true); setError(undefined);
-      try {
-        await api.request<VideoDetail>(`/api/videos/${encodeURIComponent(video.id)}`, { method: "PATCH", body: {
-          title: title.trim(),
-          ...(category !== video.categoryId ? { categoryId: category, tags } : !sameSelection(tags, video.tags ?? []) ? { tags } : {})
-        } satisfies UpdateVideoRequest });
-        toast("视频信息已保存"); onSaved();
-      } catch (err) { setError(err); toastError(err); }
-      finally { setBusy(false); }
-    }}>
-      <div className="video-editor-heading"><h2 id="video-editor-title">编辑视频信息</h2><small>修改分类和标签后即可在视频库筛选。</small></div>
-      <div className="video-editor-fields">
-        <label>视频标题<input value={title} onChange={event => setTitle(event.target.value)} maxLength={200} required disabled={busy} autoFocus /></label>
-        <label>视频分类<select aria-label="视频分类" value={category} disabled={busy} required onChange={event => {
-          const nextCategory = event.target.value;
-          const validTags = libraryTags(library.categories, nextCategory);
-          setCategory(nextCategory); setTags(current => current.filter(tag => validTags.includes(tag))); setError(undefined);
-        }}>
-          {!library.categories.some(item => item.id === video.categoryId) && <option value={video.categoryId}>当前分类（历史记录）</option>}
-          {library.categories.map(item => <option key={item.id} value={item.id} disabled={item.enabled === false}>{item.name}{item.enabled === false ? "（已停用）" : ""}</option>)}
-        </select></label>
-      </div>
-      <TagChoice items={availableTags} selected={tags} onChange={setTags} disabled={busy} />
-      <small>切换分类时仅保留该分类可用的标签；当前历史标签可保留或取消。</small>
-      {error !== undefined && <ErrorNotice error={error} />}
-      <div className="video-editor-actions"><button disabled={busy || !title.trim() || !category} type="submit">{busy ? "正在保存…" : "保存视频信息"}</button><button className="secondary" type="button" disabled={busy} onClick={onCancel}>取消</button></div>
-    </form>
-  );
 }

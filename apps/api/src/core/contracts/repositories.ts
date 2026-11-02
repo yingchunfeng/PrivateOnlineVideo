@@ -2,10 +2,10 @@ import type { FastifyRequest } from "fastify";
 import type {
   ApplicationUsage, CreateUploadRequest, CurrentUser, IsoDateTime, PlaybackSession,
   TransferPolicy, UploadedPart, UploadStatus, UploadTask, VideoDetail, VideoStatus,
-  OrganizationSelection, PlaybackMode, Page, UploadListQuery
+  OrganizationSelection, PlaybackMode, Page, UploadListQuery, SaveVideoDurationRequest, DeleteVideoResult
 } from "@online-video/shared";
 
-export interface AuthPrincipal { user: CurrentUser; loginSessionId: string }
+export interface AuthPrincipal { user: CurrentUser; loginSessionId: string; guest?: import("@online-video/shared").GuestAccess }
 export interface AuthGuard {
   /** 每次请求验证登录会话过期/撤销；mutation 同时校验 x-csrf-token 和可信来源。 */
   requireUser(request: FastifyRequest, options: { mutation: boolean }): Promise<AuthPrincipal>;
@@ -36,6 +36,8 @@ export interface VideoRecord {
   thumbnailObject: StorageObjectRef | null;
 }
 export interface VideoRepository {
+  saveDurationIfMissing?(ownerId: string, videoId: string, input: SaveVideoDurationRequest): Promise<VideoRecord>;
+  deleteOwnedRecord?(ownerId: string, videoId: string): Promise<DeleteVideoResult>;
   saveCover?(input: { ownerId: string; videoId: string; thumbnailObject: RegisteredStorageObjectRef; operationId?: string }): Promise<VideoRecord>;
   /** 在创建存储对象或导入前校验分类归属；无权/不存在返回 NOT_FOUND。 */
   assertCategoryOwned(ownerId: string, categoryId: string): Promise<void>;

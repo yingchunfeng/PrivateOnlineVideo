@@ -35,8 +35,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 }
 
 export function ThemeSwitcher() {
-  const context = useContext(ThemeContext);
-  if (!context) throw new Error("Missing ThemeProvider");
+  const context = useTheme();
   return <div className="theme-switcher" role="group" aria-label="显示主题">
     {(["light", "dark"] as const).map(value => <button key={value} type="button" className="theme-option" aria-pressed={context.theme === value} onClick={() => context.selectTheme(value)}>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -45,4 +44,10 @@ export function ThemeSwitcher() {
       {value === "light" ? "浅色" : "深色"}
     </button>)}
   </div>;
+}
+
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error("Missing ThemeProvider");
+  return context;
 }

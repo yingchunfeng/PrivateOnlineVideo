@@ -5,7 +5,25 @@
 .taxonomy-tag-options summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .taxonomy-section .cfg-col-actions button { min-height: 44px !important; }
 .taxonomy-section .cfg-col-actions > small { display: block; margin-top: 6px; }
+.taxonomy-toolbar { flex-wrap: wrap; margin-bottom: 18px; }
+.taxonomy-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.taxonomy-tabs button { gap: 8px; }
+.taxonomy-query { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
+.taxonomy-query input { width: 200px; }
+.taxonomy-table { min-width: 760px; }
+.taxonomy-table th:first-child { width: 22%; }
+.taxonomy-table td:first-child { overflow-wrap: anywhere; max-width: 230px; }
+.taxonomy-table td small { display: block; margin-top: 6px; }
+.taxonomy-tag-list { display: flex; flex-wrap: wrap; gap: 5px; max-width: 280px; }
+.taxonomy-table tr.archived { color: var(--text-secondary); }
+.taxonomy-table .taxonomy-danger { color: var(--error); border-color: var(--error); }
+.taxonomy-editor-tags { border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.taxonomy-editor-tags legend { padding: 0 6px; font-weight: 600; }
+.taxonomy-editor-tags .check-row { min-height: 44px; }
 @media (max-width: 640px) {
+  .taxonomy-toolbar { align-items: stretch; gap: 10px; }
+  .taxonomy-query { margin-left: 0; flex: 1 1 100%; }
+  .taxonomy-query input { width: 100%; min-width: 0; }
   .taxonomy-section .cfg-section-bar { align-items: flex-start; flex-direction: column; gap: 8px; }
   .taxonomy-section .cfg-col-actions { white-space: normal; }
   .taxonomy-section .cfg-col-actions button + button { margin: 6px 0 0; }

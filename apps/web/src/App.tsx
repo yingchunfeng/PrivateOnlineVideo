@@ -14,10 +14,13 @@ import { SetupGate } from "./setup";
 import { UploadQueueProvider } from "./upload-context";
 import { FeedbackProvider, useFeedback } from "./feedback";
 import { Icon, Empty, ErrorNotice } from "./ui";
-import { ThemeSwitcher } from "./theme-context";
+import { PageManagementPage } from "./pages/PageManagement";
 import { OrbitalMark, SpaceBackdrop, SpaceMeteors } from "./space-console";
-import { SpaceMotionToggle } from "./space-motion";
 import { PageEntrance, SideNavigationOrbit } from "./space-enhancements";
+import type { GuestPermission } from "@online-video/shared";
+import { GuestLoginPage } from "./pages/GuestLogin";
+import { GuestsPage } from "./pages/Guests";
+import { landingPage } from "./authz";
 
 export function App() {
   const [revision, setRevision] = useState(0);
@@ -26,7 +29,6 @@ export function App() {
       <SpaceBackdrop />
       <SpaceMeteors layer="foreground" />
       <a href="#main" className="skip">跳到内容</a>
-      <header className="theme-toolbar"><span>界面外观</span><div className="appearance-controls"><ThemeSwitcher /><SpaceMotionToggle /></div></header>
       <FeedbackProvider><SetupGate><AuthProvider key={revision}>
         <UploadQueueProvider><AppLayout revision={revision} setRevision={setRevision} /></UploadQueueProvider>
       </AuthProvider></SetupGate></FeedbackProvider>
@@ -38,7 +40,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
   const auth = useAuth();
   const { toast, toastError } = useFeedback();
   const [loggingOut, setLoggingOut] = useState(false);
-  const protectedPage = (page: React.ReactNode) => <Protected>{page}</Protected>;
+  const protectedPage = (page: React.ReactNode, permission?: GuestPermission, adminOnly = false) => <Protected {...(permission ? { permission } : {})} adminOnly={adminOnly}>{page}</Protected>;
 
   return (
     <div className={`app-shell ${auth.session ? "has-sidebar" : "no-sidebar"}`}>
@@ -46,13 +48,12 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
       {auth.session && (
         <aside className="side-dock" aria-label="侧边控制台">
           <div className="side-dock-brand">
-            <NavLink className="side-logo-group" to="/">
+            <NavLink className="side-logo-group" to={landingPage(auth.session)}>
               <div className="side-logo-symbol">
                 <OrbitalMark />
               </div>
               <div className="side-logo-text">
                 <span className="side-logo-title">云影匣</span>
-                <span className="side-logo-badge">CLOUD VAULT</span>
               </div>
             </NavLink>
           </div>
@@ -60,28 +61,29 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           <nav className="side-nav-menu" aria-label="系统主菜单">
             <SideNavigationOrbit />
             <div className="side-nav-group-label">控制中心</div>
-            <NavLink to="/" end className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
+            {auth.can("library") && <NavLink to="/" end className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="home" />
               <span>首页库</span>
-            </NavLink>
-            <NavLink to="/upload" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
+            </NavLink>}
+            {auth.can("upload") && <NavLink to="/upload" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="upload" />
               <span>上传视频</span>
-            </NavLink>
-            <NavLink to="/categories" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
+            </NavLink>}
+            {auth.can("configuration") && <NavLink to="/categories" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="settings" />
               <span>配置管理</span>
-            </NavLink>
-            <NavLink to="/tasks" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="history" /><span>任务列表</span></NavLink>
-            <NavLink to="/settings" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="settings" /><span>系统设置</span></NavLink>
-            <NavLink to="/security" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
+            </NavLink>}
+            {auth.can("tasks") && <NavLink to="/tasks" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="history" /><span>任务列表</span></NavLink>}
+            {auth.isAdmin && <NavLink to="/settings" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="settings" /><span>系统设置</span></NavLink>}
+            {auth.can("pages") && <NavLink to="/pages" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="sparkles" /><span>页面管理</span></NavLink>}
+            {auth.isAdmin && <NavLink to="/guests" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}><Icon name="shield" /><span>访客管理</span></NavLink>}
+            {auth.isAdmin && <NavLink to="/security" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="shield" />
               <span>账户安全</span>
-            </NavLink>
+            </NavLink>}
           </nav>
 
           {/* 左下角：存储空间仪表盘 HUD Widget */}
-          <div className="side-theme"><span>界面外观</span><ThemeSwitcher /><SpaceMotionToggle /></div>
           <div className="side-storage-widget">
             <div className="storage-widget-header">
               <span className="storage-widget-title">媒体存储</span>
@@ -160,13 +162,17 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
           <PageEntrance />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={protectedPage(<LibraryPage />)} />
-            <Route path="/videos/:videoId" element={protectedPage(<VideoPage />)} />
-            <Route path="/upload" element={protectedPage(<UploadPage />)} />
-            <Route path="/tasks" element={protectedPage(<TasksPage />)} />
-            <Route path="/categories" element={protectedPage(<CategoriesPage />)} />
-            <Route path="/settings" element={protectedPage(<InstallationSettingsPage />)} />
-            <Route path="/security" element={protectedPage(<SecurityPage />)} />
+            <Route path="/guest/login" element={<GuestLoginPage />} />
+            <Route path="/" element={protectedPage(<LibraryPage />, "library")} />
+            <Route path="/videos/:videoId" element={protectedPage(<VideoPage />, "library")} />
+            <Route path="/upload" element={protectedPage(<UploadPage />, "upload")} />
+            <Route path="/tasks" element={protectedPage(<TasksPage />, "tasks")} />
+            <Route path="/categories" element={protectedPage(<CategoriesPage />, "configuration")} />
+            <Route path="/settings" element={protectedPage(<InstallationSettingsPage />, undefined, true)} />
+            <Route path="/pages" element={protectedPage(<PageManagementPage />, "pages")} />
+            <Route path="/guests" element={protectedPage(<GuestsPage />, undefined, true)} />
+            <Route path="/security" element={protectedPage(<SecurityPage />, undefined, true)} />
+            <Route path="/access" element={protectedPage(<Empty title="尚无可访问页面">请联系管理员授予页面权限。</Empty>)} />
             <Route path="*" element={<Empty title="页面不存在"><NavLink className="text-link" to="/">返回视频库</NavLink></Empty>} />
           </Routes>
         </main>
@@ -181,8 +187,13 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
             ["/tasks", "任务", "history"],
             ["/categories", "配置", "settings"],
             ["/settings", "系统", "settings"],
-            ["/security", "安全", "shield"]
-          ].map(([path, label, icon]) => (
+            ["/pages", "页面", "sparkles"],
+            ["/security", "安全", "shield"],
+            ["/guests", "访客", "shield"]
+          ].filter(([path]) => {
+            const permission = ({ "/": "library", "/upload": "upload", "/tasks": "tasks", "/categories": "configuration", "/pages": "pages" } as Record<string, GuestPermission>)[path!];
+            return permission ? auth.can(permission) : auth.isAdmin;
+          }).map(([path, label, icon]) => (
             <NavLink key={path} to={path!} end={path === "/"}>
               <Icon name={icon as "library"} />
               <span>{label}</span>

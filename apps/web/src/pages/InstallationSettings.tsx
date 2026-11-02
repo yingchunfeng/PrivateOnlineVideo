@@ -6,11 +6,12 @@ import { ApiError } from "../api/client";
 import { installationApi } from "../api/installation";
 import { ErrorNotice, Loading, date } from "../ui";
 import { EmailVerificationSettings } from "./email-verification-settings";
+import { UploadLimitSettings } from "./UploadLimitSettings";
 import "./installation.css";
 
 const settingsApi = installationApi(api);
 export function InstallationSettingsPage() {
-  return <><div className="eyebrow">SYSTEM SETTINGS</div><h1>系统设置</h1><p className="muted">管理服务端 OSS 与邮件配置。已保存的密钥不回显，留空代表保持原值。</p><InstallationSettings /></>;
+  return <><h1>系统设置</h1><div className="section-space"><UploadLimitSettings /></div><InstallationSettings /></>;
 }
 
 export function InstallationSettings({ setup = false, onComplete, onExpired }: { setup?: boolean; onComplete?: () => Promise<void>; onExpired?: () => void }) {

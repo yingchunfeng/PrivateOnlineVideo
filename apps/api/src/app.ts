@@ -15,6 +15,9 @@ import { SetupService } from "./modules/setup/service.js";
 import { registerSetupModule } from "./modules/setup/routes.js";
 import { registerInstallationSettingsModule } from "./modules/installation-settings/routes.js";
 import type { InstallationSettingsService } from "./modules/installation-settings/service.js";
+import { createSiteSettings } from "./modules/site-settings/service.js";
+import { registerGuestAccess } from "./core/guest-access.js";
+import { registerGuestModule } from "./modules/guests/routes.js";
 
 export interface BuildAppOptions {
   config?: AppConfig;
@@ -51,6 +54,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     requestTimeout: 120_000
   });
   registerErrorHandlers(app);
+  if (options.auth) registerGuestAccess(app, options.auth, () => options.setup?.isReady() ?? true);
   if (options.onClose) app.addHook("onClose", async () => { await options.onClose!(); });
   app.addHook("onRequest", async (_request, reply) => { reply.header("cache-control", "no-store"); });
   if (options.setup) app.addHook("onRequest", async request => {
@@ -68,7 +72,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
         properties: { status: { type: "string", const: "ok" } } } }
     } } }
   }, async () => ({ data: { status: "ok" } }));
-  if (options.auth) registerAuthModule(app, options.auth);
+  if (options.auth) registerAuthModule(app, options.auth, () => options.backend ? createSiteSettings(options.backend.database, config).view().defaultTheme : "light");
+  if (options.auth) registerGuestModule(app, options.auth);
   if (options.setup) registerSetupModule(app, options.setup, { validateConfiguration: options.validateInstallation });
   if (options.setup && options.installationSettings) registerInstallationSettingsModule(app, options.installationSettings,
     (request, mutation) => options.setup!.requireConfigurationAccess(request, mutation));

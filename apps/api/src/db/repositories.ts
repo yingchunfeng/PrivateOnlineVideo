@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { isPartChecksum, UPLOAD_STATUSES, VIDEO_STATUSES } from "@online-video/shared";
+import { isPartChecksum, isVideoDuration, UPLOAD_STATUSES, VIDEO_STATUSES } from "@online-video/shared";
 import type { ApplicationUsage, LibraryConfig, VideoDetail, UploadTask, CreateUploadRequest } from "@online-video/shared";
 import type { AuthPrincipal, VideoRecord, UploadRecord, PlaybackRecord, VideoRepository, UploadRepository, PlaybackRepository, UsageRepository } from "../core/contracts/index.js";
 import { HttpError } from "../core/errors.js";
@@ -45,7 +45,7 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
     const coverOperation = config ? client.prepare("SELECT state FROM storage_operations WHERE owner_id=? AND video_id=? AND upload_id IS NULL AND operation_type='upload' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(row.ownerId, row.id) as { state: string } | undefined : undefined;
     return { ownerId: row.ownerId, originalObject: library.asset(row.ownerId, row.id, "original", row.originalKey), playbackObject: library.asset(row.ownerId, row.id, "playback", row.playbackKey),
       thumbnailObject: row.thumbnailKey ? library.asset(row.ownerId, row.id, "thumbnail", row.thumbnailKey) : null, video: {
-        id: row.id, title: row.title, categoryId: row.categoryId, durationSeconds: row.durationSeconds, sizeBytes: row.sizeBytes,
+        id: row.id, title: row.title, categoryId: row.categoryId, durationSeconds: isVideoDuration(row.durationSeconds) ? row.durationSeconds : null, sizeBytes: row.sizeBytes,
         groupIds: library.getLinks("video", "group", row.ownerId, row.id), tagIds: library.getLinks("video", "tag", row.ownerId, row.id),
         ...(config ? { tags: library.getTagNames("video", row.ownerId, row.id, row.categoryId), objectKey: row.originalKey, publicUrl: publicUrlFor(config, row.originalKey), fileName: upload?.file_name ?? row.originalKey.split("/").at(-1)!,
           coverObjectKey: row.thumbnailKey, coverUrl: row.thumbnailKey ? publicUrlFor(config, row.thumbnailKey) : null, coverStatus: coverOperation?.state === "failed" ? "failed" as const : coverOperation && !["registered"].includes(coverOperation.state) ? "saving" as const : row.thumbnailKey ? "saved" as const : "missing" as const } : {}),
@@ -97,6 +97,43 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
       isNull(s.playbackSessions.closedAt), gt(s.playbackSessions.expiresAt, at), isNull(s.loginSessions.revokedAt), gt(s.loginSessions.expiresAt, at))).get()!.count;
 
   const videos: VideoRepository = {
+    saveDurationIfMissing: async (ownerId, id, input) => atomic(() => {
+      if (!isVideoDuration(input.durationSeconds) || typeof input.expectedObjectKey !== "string") throw new HttpError("VALIDATION_ERROR");
+      const row = videoRow(ownerId, id); if (!row) throw new HttpError("NOT_FOUND");
+      if (input.expectedObjectKey !== row.originalKey) throw new HttpError("FILE_MISMATCH");
+      if (!isVideoDuration(row.durationSeconds)) {
+        db.update(s.videos).set({ durationSeconds: input.durationSeconds }).where(and(eq(s.videos.id, id), eq(s.videos.ownerId, ownerId))).run();
+      }
+      return videoRecord(videoRow(ownerId, id)!);
+    }),
+    deleteOwnedRecord: async (ownerId, id) => atomic(() => {
+      const row = videoRow(ownerId, id); if (!row) throw new HttpError("NOT_FOUND");
+      const at = now().toISOString();
+      const uploading = client.prepare("SELECT 1 FROM upload_tasks WHERE owner_id=? AND (video_id=? OR object_key=?) AND status<>'completed' LIMIT 1").get(ownerId, id, row.originalKey);
+      const savingCover = client.prepare("SELECT 1 FROM storage_operations WHERE owner_id=? AND video_id=? AND upload_id IS NULL AND state NOT IN ('registered','failed') LIMIT 1").get(ownerId, id);
+      const playing = client.prepare("SELECT 1 FROM playback_sessions p JOIN login_sessions l ON l.id=p.login_session_id AND l.owner_id=p.owner_id WHERE p.owner_id=? AND p.video_id=? AND p.closed_at IS NULL AND p.expires_at>? AND l.revoked_at IS NULL AND l.expires_at>? LIMIT 1").get(ownerId, id, at, at);
+      if (uploading || savingCover || playing) throw new HttpError("VIDEO_RECORD_BUSY");
+      const address = (objectKey: string) => { try { return config ? publicUrlFor(config, objectKey) : null; } catch { return null; } };
+      const original = library.asset(ownerId, id, "original", row.originalKey);
+      const playback = library.asset(ownerId, id, "playback", row.playbackKey);
+      const thumbnail = row.thumbnailKey ? library.asset(ownerId, id, "thumbnail", row.thumbnailKey) : null;
+      const objects = ([ ["original", original], ["playback", playback], ["thumbnail", thumbnail] ] as const)
+        .flatMap(([role, object]) => object ? [{ role, objectKey: object.key, bucket: object.kind === "registered" && object.bucket ? object.bucket : null,
+          publicUrl: address(object.key) }] : []);
+      // 只清理站内关系；对象身份、任务及审计保留，绝不调用存储适配器。
+      client.prepare("DELETE FROM source_authorizations WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM playback_sessions WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM watch_progress WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM video_group_links WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM video_tag_links WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM video_assets WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("UPDATE upload_tasks SET video_id=NULL WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("UPDATE storage_operations SET video_id=NULL WHERE owner_id=? AND video_id=?").run(ownerId, id);
+      client.prepare("DELETE FROM videos WHERE owner_id=? AND id=?").run(ownerId, id);
+      client.prepare("INSERT INTO audit_events(id,owner_id,action,created_at) VALUES(?,?,?,?)").run(randomUUID(), ownerId,
+        JSON.stringify({ action: "video_record_deleted", videoId: id, objects }), at);
+      return { videoId: id, title: row.title, objects };
+    }),
     saveCover: async input => atomic(() => {
       const row = videoRow(input.ownerId, input.videoId); if (!row) throw new HttpError("NOT_FOUND");
       library.assertObject(input.ownerId, input.thumbnailObject);
@@ -121,7 +158,7 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
         : db.select().from(s.videos).where(and(eq(s.videos.ownerId, input.ownerId), eq(s.videos.originalKey, input.originalObject.key))).get();
       if (existing) return videoRecord(existing);
       db.insert(s.videos).values({ id: v.id, ownerId: input.ownerId, title: v.title, categoryId: v.categoryId,
-        durationSeconds: v.durationSeconds, sizeBytes: v.sizeBytes, status: v.status, createdAt: v.createdAt, codec: v.codec,
+        durationSeconds: isVideoDuration(v.durationSeconds) ? v.durationSeconds : null, sizeBytes: v.sizeBytes, status: v.status, createdAt: v.createdAt, codec: v.codec,
         width: v.width, height: v.height, playable: v.playable, originalKey: input.originalObject.key,
         playbackKey: input.playbackObject.key, thumbnailKey: input.thumbnailObject?.key ?? null }).run();
       library.attachAssets(input.ownerId, v.id, input);
@@ -146,16 +183,16 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
       const checked = client.prepare("SELECT size_bytes FROM storage_objects WHERE owner_id=? AND id=?").get(input.ownerId, object.id) as { size_bytes: number };
       if (checked.size_bytes !== media.sizeBytes) throw new HttpError("FILE_MISMATCH");
       library.attachAssets(input.ownerId, row.id, { originalObject: object, playbackObject, thumbnailObject: input.record.thumbnailObject });
-      db.update(s.videos).set({ durationSeconds: media.durationSeconds, sizeBytes: media.sizeBytes, status: media.status, codec: media.codec,
+      db.update(s.videos).set({ durationSeconds: isVideoDuration(row.durationSeconds) ? row.durationSeconds : isVideoDuration(media.durationSeconds) ? media.durationSeconds : null, sizeBytes: media.sizeBytes, status: media.status, codec: media.codec,
         width: media.width, height: media.height, playable: media.playable, playbackKey: playbackObject.key, thumbnailKey: input.record.thumbnailObject?.key ?? row.thumbnailKey })
         .where(and(eq(s.videos.id, row.id), eq(s.videos.ownerId, input.ownerId))).run();
       return videoRecord(videoRow(input.ownerId, row.id)!);
     }),
     updateMedia: async (ownerId, id, patch) => atomic(() => {
-      if (!videoRow(ownerId, id)) throw new HttpError("NOT_FOUND");
+      const row = videoRow(ownerId, id); if (!row) throw new HttpError("NOT_FOUND");
       if (!VIDEO_STATUSES.includes(patch.status)) throw new HttpError("VALIDATION_ERROR");
       library.attachAssets(ownerId, id, { originalObject: library.asset(ownerId, id, "original", videoRow(ownerId, id)!.originalKey), ...patch });
-      db.update(s.videos).set({ status: patch.status, durationSeconds: patch.durationSeconds, codec: patch.codec, width: patch.width,
+      db.update(s.videos).set({ status: patch.status, durationSeconds: isVideoDuration(row.durationSeconds) ? row.durationSeconds : isVideoDuration(patch.durationSeconds) ? patch.durationSeconds : null, codec: patch.codec, width: patch.width,
         height: patch.height, playable: patch.playable, playbackKey: key(patch.playbackObject.key), thumbnailKey: patch.thumbnailObject ? key(patch.thumbnailObject.key) : null })
         .where(and(eq(s.videos.id, id), eq(s.videos.ownerId, ownerId))).run();
       return videoRecord(videoRow(ownerId, id)!);
@@ -234,7 +271,7 @@ export function createRepositories(database: AppDatabase, now: () => Date = () =
         const found = object.kind === "registered" ? client.prepare("SELECT video_id FROM video_assets WHERE owner_id=? AND storage_object_id=? AND asset_role='original'").get(input.ownerId, object.id) as { video_id: string } | undefined : undefined;
         let registered = found ? videoRow(input.ownerId, found.video_id) : undefined;
         if (!registered) {
-          db.insert(s.videos).values({ id: v.id, ownerId: input.ownerId, title: row.title, categoryId: v.categoryId, durationSeconds: v.durationSeconds,
+          db.insert(s.videos).values({ id: v.id, ownerId: input.ownerId, title: row.title, categoryId: v.categoryId, durationSeconds: isVideoDuration(v.durationSeconds) ? v.durationSeconds : null,
             sizeBytes: v.sizeBytes, status: v.status, createdAt: v.createdAt, codec: v.codec, width: v.width, height: v.height, playable: v.playable,
             originalKey: object.key, playbackKey: input.video.playbackObject.key, thumbnailKey: input.video.thumbnailObject?.key ?? null }).run();
           library.attachAssets(input.ownerId, v.id, input.video); library.setLinks("video", "group", input.ownerId, v.id, v.groupIds); library.setLinks("video", "tag", input.ownerId, v.id, v.tagIds); registered = videoRow(input.ownerId, v.id)!;

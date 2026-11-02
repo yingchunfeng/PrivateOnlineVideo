@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { EmailChallenge } from "@online-video/shared";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
+import { landingPage } from "../authz";
 import { api, mockEnabled } from "../api";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
@@ -23,7 +24,7 @@ export function LoginPage() {
   const from = loginState?.from;
   const destination = typeof from === "string" && /^\/(?!\/)/.test(from) && !from.startsWith("/login") && !from.includes("\\") ? from : "/";
   if (auth.loading) return <Loading />;
-  if (auth.session) return <Navigate to={destination} replace />;
+  if (auth.session) return <Navigate to={auth.session.guest ? landingPage(auth.session) : destination} replace />;
   const emailMode = options.data?.authMethod === "email";
   const passwordMode = options.data?.authMethod === "password";
   const report = (failure: unknown) => {
@@ -37,7 +38,7 @@ export function LoginPage() {
     catch (failure) { report(failure); }
     finally { setBusy(false); }
   };
-  return <section className="narrow account-form"><div className="eyebrow">ONLY FOR YOU</div><h1>云影匣</h1><p className="muted">登录，回到只属于你的私人视频库。</p><div className="panel stack"><h2>安全登录</h2>{typeof loginState?.notice === "string" && <div className="notice" role="status">{loginState.notice}</div>}{auth.expired && !loginState?.notice && <div className="notice warning" role="status">会话未登录、已过期或被撤销，请重新验证。</div>}{auth.error !== undefined && <ErrorNotice error={auth.error} retry={auth.refresh} />}{options.busy ? <Loading /> : options.error ? <ErrorNotice error={options.error} retry={options.reload} /> : <form className="stack" aria-label="安全登录" onSubmit={async event => {
+  return <section className="narrow account-form"><div className="eyebrow">ONLY FOR YOU</div><h1>云影匣</h1><p className="muted">登录，回到只属于你的私人视频库。</p><div className="panel stack"><h2>安全登录</h2><Link className="text-link" to="/guest/login">使用临时密码访客登录</Link>{typeof loginState?.notice === "string" && <div className="notice" role="status">{loginState.notice}</div>}{auth.expired && !loginState?.notice && <div className="notice warning" role="status">会话未登录、已过期或被撤销，请重新验证。</div>}{auth.error !== undefined && <ErrorNotice error={auth.error} retry={auth.refresh} />}{options.busy ? <Loading /> : options.error ? <ErrorNotice error={options.error} retry={options.reload} /> : <form className="stack" aria-label="安全登录" onSubmit={async event => {
     event.preventDefault(); if (busy || emailMode && (!challenge || clock.expired)) return; setBusy(true); setError(undefined);
     try {
       await auth.login(emailMode && challenge ? { authMethod: "email", password, challengeId: challenge.challengeId, code } : passwordMode ? { authMethod: "password", password } : { authMethod: "totp", password, totp });

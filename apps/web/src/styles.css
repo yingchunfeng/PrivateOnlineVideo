@@ -503,11 +503,14 @@ main {
   display: flex;
   justify-content: space-around;
   padding: 6px 8px;
+  overflow-x: auto;
   z-index: 100;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 242, 254, 0.15);
 }
 .bottom-nav a {
-  flex: 1;
+  flex: 1 0 44px;
+  min-width: 44px;
+  white-space: nowrap;
   max-width: 100px;
   min-height: 52px;
   display: grid;

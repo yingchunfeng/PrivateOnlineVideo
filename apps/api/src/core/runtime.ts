@@ -10,6 +10,7 @@ import { loadLibraryConfig } from "./library-config.js";
 import { recoverLibraryConfiguration } from "./library-configuration.js";
 import { resolve } from "node:path";
 import { WORKSPACE_ROOT } from "../db/database.js";
+import { createSiteSettings } from "../modules/site-settings/service.js";
 
 /** 启动仅核验最新版本，不执行迁移；公共上传使用服务端凭据，旧私有分支保留。 */
 export async function runtimeModules(config: AppConfig, auth: AuthService, database: AppDatabase, now: () => Date = () => new Date()): Promise<Pick<BuildAppOptions, "backend" | "media">> {
@@ -22,7 +23,8 @@ export async function runtimeModules(config: AppConfig, auth: AuthService, datab
   const repositories = createRepositories(database, now, config.library);
   const metadata = limits.ffprobePath ? new FFprobeMetadataInspector({ executable: limits.ffprobePath, timeoutMs: limits.probeTimeoutMs,
     maxReadBytes: limits.probeMaxReadBytes, maxConcurrent: limits.probeMaxConcurrent }) : new UnavailableMetadataInspector();
-  const register = createMediaModule({ ...limits, metadata });
+  const siteSettings = createSiteSettings(database, config, now);
+  const register = createMediaModule({ ...limits, metadata, getMaxUploadBytes: () => siteSettings.view().maxUploadBytes });
   const dependencies = { kind: config.environment === "production" ? "production" as const : "development" as const,
     config, auth, ...repositories, now };
   if (config.storageDriver === "mock") {

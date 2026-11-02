@@ -1,0 +1,42 @@
+.guest-boundary { line-height: 1.7; }
+.guest-summary { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 22px 0 12px; color: var(--text-secondary); font-size: .85rem; }
+.guest-summary strong { margin-left: 6px; color: var(--text); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.guest-toolbar { justify-content: space-between; }
+.guest-toolbar label { display: flex; flex: 1; max-width: 380px; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: .85rem; }
+.guest-toolbar input { flex: 1; min-width: 120px; width: 100%; }
+.guest-toolbar [aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.guest-table { min-width: 920px; }
+.guest-table td:first-child { min-width: 150px; }
+.guest-table td:nth-child(2) { width: 32%; min-width: 250px; }
+.guest-table td:nth-child(3) { min-width: 180px; }
+.guest-table td:nth-child(4) { min-width: 100px; }
+.guest-table td:last-child { min-width: 240px; }
+.guest-table td small { display: block; margin-top: 6px; color: var(--text-secondary); font-size: .75rem; }
+.guest-table td strong { overflow-wrap: anywhere; }
+.guest-permission-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.guest-expired { color: var(--text-secondary); }
+.guest-table button.guest-danger { color: var(--error); }
+.guest-empty { padding: 32px 16px !important; color: var(--text-secondary); text-align: center; }
+.guest-form { display: grid; gap: 20px; }
+.guest-form .management-field { display: grid; gap: 8px; min-width: 0; }
+.guest-form small { color: var(--text-secondary); font-weight: 400; line-height: 1.5; }
+.guest-time-fields { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(220px, 1.3fr); align-items: start; gap: 16px; }
+.guest-time-fields :is(input, select) { height: 48px; }
+.guest-permissions { margin: 0; padding: 0; min-width: 0; border: 0; }
+.guest-permissions legend { margin-bottom: 10px; font-size: .9rem; font-weight: 600; }
+.guest-permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.guest-permission-grid label { display: flex; min-height: 64px; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border-subtle); cursor: pointer; }
+.guest-permission-grid label:has(input:checked) { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.guest-permission-grid input[type="checkbox"] { flex: 0 0 auto; min-height: 18px; height: 18px; width: 18px; accent-color: var(--accent); }
+.guest-permission-grid span { min-width: 0; font-size: .85rem; }
+.guest-permission-grid small { display: block; margin-top: 4px; font-size: .75rem; }
+.guest-delivery .guest-password { font-family: monospace; font-size: 1rem; letter-spacing: .06em; }
+.guest-delivery textarea { width: 100%; resize: vertical; font-size: .85rem; line-height: 1.6; }
+.guest-login { margin-top: clamp(20px, 6vh, 72px); }
+@media (max-width: 600px) {
+  .guest-toolbar { gap: 12px; }
+  .guest-toolbar > label { flex-basis: 100%; max-width: none; }
+  .guest-time-fields, .guest-permission-grid { grid-template-columns: minmax(0, 1fr); }
+  .guest-form input:not([type="checkbox"]), .guest-form select, .guest-login input { font-size: 16px; }
+  .guest-summary { gap: 12px 16px; }
+}

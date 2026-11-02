@@ -40,7 +40,7 @@ export class ApiClient {
   private async send<T>(path: ApiPath, init: RequestInit): Promise<T> {
     if (!isSiteApiPath(path)) throw new ApiError("VALIDATION_ERROR", "资源地址必须为站内 API");
     const headers = new Headers(init.headers);
-    const publicLoginRequest = (init.method ?? "GET") === "POST" && (path === "/api/auth/login" || path === "/api/auth/login/code" || path === "/api/setup/login");
+    const publicLoginRequest = (init.method ?? "GET") === "POST" && (path === "/api/auth/login" || path === "/api/auth/guest/login" || path === "/api/auth/login/code" || path === "/api/setup/login");
     if (!["GET", "HEAD"].includes(init.method ?? "GET") && !publicLoginRequest) {
       if (!this.csrf) throw new ApiError("CSRF_REJECTED", "会话校验信息已失效，请重新登录");
       headers.set(CSRF_HEADER, this.csrf);

@@ -6,6 +6,8 @@ import { HttpError } from "../../../core/errors.js";
 import type { MediaContext } from "../context.js";
 import { assertOrganization, organizationSelection, principal, recordBody, requestSignal, text } from "../context.js";
 import { makeVideo } from "../upload/video.js";
+import { unknownMetadata } from "../metadata/types.js";
+import { assertGuestRequest } from "../../../core/guest-access.js";
 
 interface PreviewRecord { ownerId: string; loginSessionId: string; expires: number; prefix: string; items: Map<string, StorageListItem>; dto: ImportPreview }
 interface CursorRecord { ownerId: string; loginSessionId: string; expires: number; prefix: string; storageCursor: string }
@@ -67,6 +69,7 @@ export function registerImportRoutes(app: FastifyInstance, context: MediaContext
     const itemIds = body.itemIds.map(id => text(id));
     if (new Set(itemIds).size !== itemIds.length) throw new HttpError("VALIDATION_ERROR");
     const existingVideoId = body.existingVideoId === undefined ? undefined : text(body.existingVideoId);
+    if (existingVideoId && auth.guest && !auth.guest.permissions.includes("video_edit")) throw new HttpError("FORBIDDEN");
     if (existingVideoId && itemIds.length !== 1) throw new HttpError("VALIDATION_ERROR");
     expire(); const preview = previews.get(previewId);
     if (!preview || preview.ownerId !== auth.user.id || preview.loginSessionId !== auth.loginSessionId) throw new HttpError("NOT_FOUND");
@@ -100,7 +103,9 @@ export function registerImportRoutes(app: FastifyInstance, context: MediaContext
           operation = { id: prepared.operationId, registered: false }; operations.push(operation);
           object = await deps.objects.verify({ ownerId: auth.user.id, object: prepared.object, metadata: entry.metadata });
         }
-        const metadata = await options.metadata.inspect({ storage: deps.storage, object, signal: controller.signal });
+        let metadata = { ...unknownMetadata };
+        try { metadata = await options.metadata.inspect({ storage: deps.storage, object, signal: controller.signal }); }
+        catch (error) { if (controller.signal.aborted) throw error; request.log.warn({ code: "METADATA_UNAVAILABLE" }, "optional import metadata unavailable"); }
         const checked = await deps.storage.head({ object, signal: controller.signal });
         if (checked.etag !== entry.metadata.etag || checked.sizeBytes !== entry.metadata.sizeBytes || (checked.versionId ?? null) !== (entry.metadata.versionId ?? null)) throw new HttpError("FILE_MISMATCH");
         controller.signal.throwIfAborted();
@@ -118,6 +123,7 @@ export function registerImportRoutes(app: FastifyInstance, context: MediaContext
       const videos: VideoDetail[] = [];
       for (const candidate of candidates) {
         controller.signal.throwIfAborted();
+        assertGuestRequest(request);
         const video = existingVideoId
           ? await deps.videos.bindLegacy!({ ownerId: auth.user.id, videoId: existingVideoId, record: candidate.video })
           : await deps.videos.register(candidate.video);

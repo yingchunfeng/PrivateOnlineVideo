@@ -17,7 +17,7 @@ npm run dev:api
 }
 ```
 
-- `databasePath` 必填，指定已有的 v6 SQLite 数据库。
+- `databasePath` 必填，指定已有的 v5/v6/v7/v8 SQLite 数据库；旧库不自动升级，新增站点设置（v7）及访客（v8）持久化需另行核对目标、备份并授权增量迁移，不能向既有库导入新空库完整 SQL。
 - `authKeyFile` 可选，指定已有的 32 字节应用加密主密钥；这里只放路径，不能放密钥内容或阿里云 AccessKey。
 - 所有相对路径均以项目根目录为基准，与 npm workspace 的工作目录无关。数据库和密钥必须位于项目 `.local` 内。
 - OSS、SMTP 的配置及敏感凭据从选中的数据库读取，不从 `.env` 或这个启动 JSON 读取。网页修改只保存到当前数据库。

@@ -2,26 +2,28 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { chromium, expect } from "@playwright/test";
 import { preview } from "vite";
 import { SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
 
 test("实际生产入口、chunk 无开发 Mock/凭据/样例，默认走站内真实 API", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
+  const output = resolve(process.env.WEB_PRODUCTION_DIR ?? join(root, "dist"));
+  const html = await readFile(join(output, "index.html"), "utf8");
   const scripts = [...html.matchAll(/src="(\/assets\/[^"]+\.js)"/g)].map(match => match[1]!);
   assert.ok(scripts.length > 0);
-  const assets = (await readdir(new URL("../dist/assets/", import.meta.url))).filter(name => name.endsWith(".js"));
+  const assets = (await readdir(join(output, "assets"))).filter(name => name.endsWith(".js"));
   const checked = new Set<string>();
   while (scripts.length) {
     const src = scripts.pop()!; if (checked.has(src)) continue; checked.add(src);
-    const bundle = await readFile(new URL(`../dist${src}`, import.meta.url), "utf8");
+    const bundle = await readFile(join(output, src), "utf8");
     // AccessKeyId/AccessKeySecret 是正式配置表单标签，不是内置凭据；继续拒绝测试秘密和服务端代码。
     for (const marker of ["demo-password", "mock-owner", "ov.dev-mock", "devMock=1", "isolated-access-key-secret", "isolated-mail-authorization", "test/fixtures", "better-sqlite3", "ali-oss", "node:crypto", "node:fs", "account-setup.json", "totpSecret", "auth.key", "SMTP_CONFIG_FILE", "smtp.json", "nodemailer", "mock-password", "MockMailSender"]) assert.equal(bundle.includes(marker), false, `Unexpected production marker: ${marker}`);
     for (const name of assets) if (bundle.includes(name)) scripts.push(`/assets/${name}`);
   }
-  assert.equal((await readdir(new URL("../dist", import.meta.url))).includes("test"), false);
-  const server = await preview({ root, mode: "production", preview: { port: 0 } });
+  assert.equal((await readdir(output)).includes("test"), false);
+  const server = await preview({ root, mode: "production", build: { outDir: output }, preview: { port: 0 } });
   const browser = await chromium.launch({ channel: "msedge", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 375, height: 812 } });

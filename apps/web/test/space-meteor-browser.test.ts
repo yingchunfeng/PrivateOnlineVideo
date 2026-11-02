@@ -7,6 +7,7 @@ import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { DEFAULT_SPACE_SETTINGS, normalizeSpaceSettings, SPACE_EFFECTS_STORAGE_KEY } from "../src/space-meteor-settings";
 import type { SpaceEffectsSettings } from "../src/space-meteor-settings";
+import { fixtureSiteSettings, openSpaceSettings } from "./page-settings-helpers";
 
 const frozenTime = new Date("2026-10-28T12:00:00Z");
 
@@ -21,6 +22,7 @@ async function fixture(context: BrowserContext, origin: string) {
       case "/api/auth/me": return ok({ user: { id: "meteor-owner", displayName: "流星验收", totpEnabled: false, authMethod: "password", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "meteor-csrf" });
       case "/api/library": return ok({ mediaBaseUrl: "https://unused-meteor.example", objectPrefix: "media/", categories: [] });
       case "/api/settings/limits": return ok({ maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
+      case "/api/settings/site": return ok(fixtureSiteSettings);
       case "/api/videos": return ok({ items: [], total: 0, page: 1, pageSize: 12 });
       case "/api/uploads": return ok({ items: [], total: 0, page: 1, pageSize: 20 });
       default: return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "NOT_FOUND" } }) });
@@ -36,7 +38,7 @@ function deterministicSettings(): SpaceEffectsSettings {
 }
 
 test("meteor settings and global provider: deterministic isolated browser integration", { timeout: 120000 }, async t => {
-  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0 } });
+  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, watch: null, hmr: false } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   const contexts: BrowserContext[] = [];
   const errors: string[] = [];
@@ -71,20 +73,20 @@ test("meteor settings and global provider: deterministic isolated browser integr
       return { context, page };
     };
     const openSettings = async (page: Page) => {
-      await page.getByRole("button", { name: "星空动效设置", exact: true }).click();
+      await openSpaceSettings(page);
       await expect(page.locator("dialog[data-space-settings] ")).toBeVisible();
     };
 
-    await t.test("settings save immediately, survive refresh, synchronize tabs, recover corruption and reset only this feature", async () => {
+    await t.test("settings save explicitly, cancel keeps saved values, survive refresh, synchronize tabs and recover corruption", async () => {
       const { context, page } = await createPage();
       await openSettings(page);
       await page.getByLabel("同屏最大数量", { exact: true }).fill("4");
-      assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 4);
+      assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 6);
       for (const invalid of ["", "-1", "1000000"]) {
         await page.getByLabel("同屏最大数量", { exact: true }).fill(invalid);
         await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveAttribute("aria-invalid", "true");
-        assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 4);
-        await page.getByRole("button", { name: "关闭星空设置" }).focus();
+        assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 6);
+        await page.getByRole("button", { name: "关闭弹窗" }).focus();
         await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("4");
       }
       const slider = page.getByRole("slider", { name: "同屏最大数量滑块", exact: true });
@@ -96,16 +98,25 @@ test("meteor settings and global provider: deterministic isolated browser integr
       await expect(page.getByRole("tab", { name: "流星雨", exact: true })).toHaveAttribute("aria-selected", "true");
       await page.keyboard.press("Escape");
       await expect(page.locator("dialog[data-space-settings]")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "星空动效设置", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "编辑动态星空", exact: true })).toBeFocused();
+      await openSettings(page);
+      await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("6");
+      await page.getByLabel("同屏最大数量", { exact: true }).fill("4");
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       await page.reload(); await expect(page.getByRole("heading", { level: 1 })).toBeVisible(); await openSettings(page);
       await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("4");
       const other = await context.newPage(); await other.goto(origin);
       await other.evaluate(({ key, value }) => localStorage.setItem(key, JSON.stringify(value)), { key: SPACE_EFFECTS_STORAGE_KEY, value: { ...deterministicSettings(), normal: { ...deterministicSettings().normal, maxVisible: 9 } } });
+      await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("4");
+      await page.getByRole("button", { name: "取消", exact: true }).click(); await openSettings(page);
       await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("9");
       await other.evaluate(key => localStorage.setItem(key, "{broken"), SPACE_EFFECTS_STORAGE_KEY);
+      await page.getByRole("button", { name: "取消", exact: true }).click(); await openSettings(page);
       await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("6");
       await page.getByRole("button", { name: "恢复默认值", exact: true }).click();
       assert.equal(await page.evaluate(() => localStorage.getItem("meteor-unrelated")), "preserve");
+      assert.equal(await page.evaluate(key => localStorage.getItem(key), SPACE_EFFECTS_STORAGE_KEY), "{broken");
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), SPACE_EFFECTS_STORAGE_KEY), normalizeSpaceSettings(null));
       await context.close();
     });
@@ -166,7 +177,7 @@ test("meteor settings and global provider: deterministic isolated browser integr
       await expect(page.locator(".space-meteor")).toHaveCount(0);
       await page.clock.runFor(999); await expect(page.locator(".space-meteor")).toHaveCount(0);
       await page.clock.runFor(1); await expect(page.locator(".space-meteor")).toHaveCount(2);
-      await page.getByRole("button", { name: "关闭星空设置" }).click();
+      await page.getByRole("button", { name: "取消", exact: true }).click();
       await page.evaluate(() => {
         const frame = document.createElement("div"); frame.className = "player-frame";
         const video = document.createElement("video"); Object.defineProperty(video, "paused", { configurable: true, value: false });
@@ -224,7 +235,7 @@ test("meteor settings and global provider: deterministic isolated browser integr
       await openSettings(denied.page);
       await expect(denied.page.locator("dialog[data-space-settings]")).toContainText("浏览器存储受限");
       await denied.page.getByLabel("同屏最大数量", { exact: true }).fill("3");
-      await denied.page.getByRole("button", { name: "关闭星空设置" }).click();
+      await denied.page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       await openSettings(denied.page); await expect(denied.page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("3");
       await denied.context.close();
       const reduced = await createPage({ reduced: true });
@@ -233,6 +244,7 @@ test("meteor settings and global provider: deterministic isolated browser integr
       await reduced.page.getByLabel("同屏最大数量", { exact: true }).fill("4");
       await expect(reduced.page.getByRole("button", { name: "立即预览流星雨", exact: true })).toBeDisabled();
       await reduced.page.clock.runFor(10000); await expect(reduced.page.locator(".space-meteor")).toHaveCount(0);
+      await reduced.page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       assert.equal(await reduced.page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 4);
       await reduced.context.close();
     });
@@ -242,30 +254,36 @@ test("meteor settings and global provider: deterministic isolated browser integr
       await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException("Quota full", "QuotaExceededError"); }; });
       await openSettings(page);
       await page.getByLabel("同屏最大数量", { exact: true }).fill("3");
-      await expect(page.locator("dialog[data-space-settings]")).toContainText("浏览器存储受限");
       await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("3");
       assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).normal.maxVisible, SPACE_EFFECTS_STORAGE_KEY), 6);
       await page.getByRole("button", { name: "预览普通流星", exact: true }).click();
       await page.clock.runFor(2000);
       assert.ok(await page.locator(".space-meteor").count() <= 3);
-      await page.getByRole("button", { name: "关闭星空设置" }).click();
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       await openSettings(page); await expect(page.getByLabel("同屏最大数量", { exact: true })).toHaveValue("3");
+      await expect(page.locator("dialog[data-space-settings]")).toContainText("浏览器存储受限");
       await context.close();
     });
 
-    await t.test("editing active duration and foreground settings applies without waiting for the old scene to finish", async () => {
+    await t.test("draft preview and explicit save apply foreground and duration without waiting for the old scene to finish", async () => {
       const { context, page } = await createPage();
       await page.clock.runFor(1000);
       await expect(page.locator(".space-meteors-foreground .space-meteor")).toHaveCount(2);
       await openSettings(page);
       await page.getByRole("checkbox", { name: /^前景流星/ }).uncheck();
+      await page.getByRole("button", { name: "预览普通流星", exact: true }).click();
       await expect(page.locator(".space-meteors-foreground .space-meteor")).toHaveCount(0);
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
+      await openSettings(page);
       await page.getByRole("button", { name: "立即预览流星雨", exact: true }).click();
       await page.clock.runFor(2000);
       await expect(page.locator(".space-meteors-background")).toHaveAttribute("data-shower", "true");
       await page.getByRole("tab", { name: "流星雨", exact: true }).click();
       await page.getByLabel("持续时间", { exact: true }).fill("1");
+      assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).shower.duration, SPACE_EFFECTS_STORAGE_KEY), 4);
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       await expect(page.locator(".space-meteors-background")).toHaveAttribute("data-shower", "false");
+      await openSettings(page);
       await expect(page.getByRole("button", { name: "停止预览", exact: true })).toBeDisabled();
       assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).shower.duration, SPACE_EFFECTS_STORAGE_KEY), 1);
       await context.close();

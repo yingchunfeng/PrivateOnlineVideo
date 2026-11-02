@@ -1,0 +1,38 @@
+.page-settings-table { min-width: 760px; }
+.page-settings-table th:first-child { width: 160px; }
+.page-settings-table th:nth-child(2) { width: 140px; }
+.page-settings-table th:last-child { width: 150px; }
+.page-settings-table td { overflow-wrap: anywhere; }
+.page-settings-table td > small { display: block; color: var(--text-secondary); line-height: 1.6; }
+.page-settings-table button { min-height: 44px; white-space: nowrap; }
+.page-theme-options { display: flex; flex-wrap: wrap; gap: 20px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; }
+.page-theme-options legend { padding: 0 6px; color: var(--text-secondary); font-size: .85rem; }
+.page-theme-options label { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; }
+.page-theme-options input[type="radio"] { width: 18px; height: 18px; min-height: 0; margin: 0; }
+.upload-limit-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+.upload-limit-value strong { font-size: 1.05rem; }
+.upload-limit-form { max-width: 560px; }
+.upload-limit-form input { max-width: 320px; }
+.management-modal.space-settings-editor { width: min(760px, calc(100% - 24px)); }
+.space-settings-editor .space-settings-body { overflow: visible; padding: 0; }
+.space-settings-editor .space-settings-tabs { padding: 0 0 12px; margin-top: 16px; }
+.space-settings-editor .space-settings-state { padding: 0; }
+.space-settings-editor .space-settings-intro { padding: 0; }
+.space-settings-editor .space-editor-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.space-settings-editor .management-modal-footer { display: block; }
+.space-settings-editor .space-settings-footer-meta { margin: 10px 0; }
+.space-settings-editor .space-settings-footer-meta > span { max-width: 100%; }
+@media (max-width: 600px) {
+  .space-settings-editor .space-settings-grid { grid-template-columns: 1fr; }
+  .space-settings-editor .space-number-inputs input[type="number"] { width: 90px; }
+  .space-editor-actions > button { flex: 1; min-height: 44px; }
+}
+@media (min-width: 601px) and (max-height: 500px) {
+  .space-settings-editor .management-modal-header { padding: 12px 16px; }
+  .space-settings-editor .management-modal-header p { margin-top: 4px; font-size: .75rem; line-height: 1.4; }
+  .space-settings-editor .management-modal-footer { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 8px 16px; }
+  .space-settings-editor .space-settings-footer-meta { grid-column: 1 / -1; grid-row: 2; margin: 0; }
+  .space-settings-editor .space-settings-footer-meta button { min-height: 32px; }
+  .space-settings-editor .space-preview-actions button { min-height: 36px; padding: 6px; font-size: .7rem; }
+  .space-settings-editor .space-editor-actions > button { min-height: 36px; padding: 6px 10px; }
+}

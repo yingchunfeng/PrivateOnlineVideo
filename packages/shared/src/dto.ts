@@ -16,7 +16,7 @@ export interface ApiResponse<T> { data: T }
 export interface Page<T> { items: T[]; page: number; pageSize: number; total: number }
 export interface PaginationQuery { page?: number; pageSize?: number }
 export type AuthMethod = "password" | "totp" | "email";
-export interface CurrentUser { id: ResourceId; displayName: string; totpEnabled: boolean; authMethod: AuthMethod; authVersion: number; emailMasked: string | null; emailVerified: boolean }
+export interface CurrentUser { id: ResourceId; displayName: string; totpEnabled: boolean; authMethod: AuthMethod; authVersion: number; emailMasked: string | null; emailVerified: boolean; role?: "admin" | "guest" }
 export interface Category { id: ResourceId; name: string; sortOrder: number; isDefault?: boolean; archivedAt?: IsoDateTime | null }
 export interface LibraryGroup { id: ResourceId; name: string; description: string; sortOrder: number; createdAt: IsoDateTime; updatedAt: IsoDateTime; archivedAt: IsoDateTime | null }
 export interface Tag { id: ResourceId; name: string; createdAt: IsoDateTime; updatedAt: IsoDateTime; archivedAt: IsoDateTime | null }
@@ -139,7 +139,7 @@ export interface LoginSession {
   expiresAt: IsoDateTime;
   isCurrent: boolean;
 }
-export interface AuthSession { user: CurrentUser; csrfToken: string }
+export interface AuthSession { user: CurrentUser; csrfToken: string; defaultTheme?: "light" | "dark"; guest?: import("./guests.js").GuestAccess }
 export interface WatchProgress {
   videoId: ResourceId;
   positionSeconds: number;

@@ -1,0 +1,21 @@
+.task-table { min-width: 1000px; }
+.task-list-controls label { white-space: nowrap; }
+.task-table .task-title-cell { min-width: 190px; max-width: 280px; }
+.task-title-cell > strong, .task-title-cell > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-table td > small, .task-state-cell > small, .task-row-progress > small { display: block; margin-top: 5px; }
+.task-state-cell { min-width: 170px; max-width: 250px; overflow-wrap: anywhere; }
+.task-row-progress { min-width: 150px; position: relative; display: grid; gap: 5px; }
+.task-row-progress progress { width: 100%; max-width: 190px; height: 8px; accent-color: var(--accent); }
+.task-time-cell { width: 145px; min-width: 125px; font-size: .82rem; color: var(--text-secondary); }
+.task-row-actions { min-width: 210px; max-width: 300px; }
+.task-row-actions .task-file-selector { white-space: nowrap; }
+.task-detail { overflow-wrap: anywhere; }
+.task-detail-head { display: flex; align-items: flex-start; gap: 14px; }
+.task-detail-head > div { min-width: 0; }
+.task-detail-head small { display: block; margin-top: 6px; }
+.task-detail .task-cover-image { flex-shrink: 0; }
+.task-detail .transfer-meter small { display: block; margin-top: 6px; }
+@media (max-width: 600px) {
+  .task-detail-head { flex-wrap: wrap; }
+  .task-row-actions { max-width: 220px; }
+}

@@ -26,7 +26,6 @@ export function LegacyCategoriesPage() {
     <>
       <div className="sci-cat-header-row">
         <div className="sci-cat-header-info">
-          <div className="eyebrow">SYSTEM TAXONOMY & CONFIGURATION</div>
           <h1 className="sci-cat-title">配置管理</h1>
           <p className="muted">维护媒体视频的分类索引与内容检索标签，实现灵活的组织架构与多维检索。</p>
         </div>

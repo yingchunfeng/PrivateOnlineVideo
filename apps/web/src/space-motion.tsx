@@ -6,7 +6,7 @@ import { SpaceMotionSettings } from "./space-motion-settings";
 
 export const spaceMotionStorageKey = "ov.space-motion.v1";
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
-const SpaceMotionContext = createContext<{ enabled: boolean; reduced: boolean; toggle: () => void } | undefined>(undefined);
+const SpaceMotionContext = createContext<{ preferred: boolean; enabled: boolean; reduced: boolean; toggle: () => void; setPreferred: (next: boolean) => void } | undefined>(undefined);
 
 function readPreference() {
   try { return window.localStorage.getItem(spaceMotionStorageKey) !== "off"; } catch { return true; }
@@ -70,12 +70,17 @@ export function SpaceMotionProvider({ children }: { children: ReactNode }) {
     };
   }, [enabled, hidden, playing]);
 
-  const toggle = () => {
-    const next = !preferred;
+  const selectPreference = (next: boolean) => {
     setPreferred(next);
     try { window.localStorage.setItem(spaceMotionStorageKey, next ? "on" : "off"); } catch { /* 存储受限时仍可在当前页面切换。 */ }
   };
-  return <SpaceMotionContext.Provider value={{ enabled, reduced, toggle }}><SpaceMeteorProvider enabled={enabled} paused={hidden || playing}>{children}</SpaceMeteorProvider></SpaceMotionContext.Provider>;
+  return <SpaceMotionContext.Provider value={{ preferred, enabled, reduced, toggle: () => selectPreference(!preferred), setPreferred: selectPreference }}><SpaceMeteorProvider enabled={enabled} paused={hidden || playing}>{children}</SpaceMeteorProvider></SpaceMotionContext.Provider>;
+}
+
+export function useSpaceMotion() {
+  const context = useContext(SpaceMotionContext);
+  if (!context) throw new Error("Missing SpaceMotionProvider");
+  return context;
 }
 
 export function SpaceMotionToggle() {

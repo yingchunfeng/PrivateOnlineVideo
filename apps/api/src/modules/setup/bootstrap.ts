@@ -21,7 +21,7 @@ async function writeNewSecret(path: string, value: Buffer | string): Promise<voi
   try { await file.writeFile(value); await file.sync(); } finally { await file.close(); }
 }
 
-/** 仅供显式新部署启动：只接收已执行完整 SQL 的空 v6 库，不创建/升级现有数据库。 */
+/** 仅供显式新部署启动：只接收已执行完整 SQL 的空库，不创建/升级现有数据库。 */
 export async function initializeInstallation(database: AppDatabase, settings: AuthSettings,
   options: { reuseExistingKey?: boolean } = {}): Promise<{ key: Buffer; installationCodeFile: string | null }> {
   const state = readInstallationState(database);

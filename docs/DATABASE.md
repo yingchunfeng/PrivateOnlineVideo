@@ -1,5 +1,7 @@
 # CORE-02：SQLite 与 Repository
 
+> **2026-11-02 管理页面与访客更新：源码最新为 v8（41 表），新空库完整 SQL 已包含 0001～0008 和匹配账本。** [0007-site-settings.sql](../apps/api/src/db/migrations/0007-site-settings.sql) 新增 `site_settings`，保存默认登录外观和单文件上传上限；[0008-guests.sql](../apps/api/src/db/migrations/0008-guests.sql) 新增 `guests`、`guest_sessions`、`guest_uploads`，保存访客密码摘要、会话关联和任务归属。既有 v5/v6/v7 库可兼容启动，但缺表时不开放对应持久化写入；服务不自动迁移。本次提交未执行正式库升级，已有库不得导入新空库完整 SQL，须先另行核对目标、备份并授权增量迁移。当前流程见[新部署指南](NEW_INSTALL.md)与[数据库切换说明](DATABASE_SWITCHING.md)，以下保留各历史版本记录。
+
 > **2026-10-26 新部署更新：源码新增 v6（37 表），完整新空库使用 [NEW_INSTALL_FULL.sql](sql/NEW_INSTALL_FULL.sql)，不再逐份执行旧 SQL。** v6 仅增加安装状态、独立认证方式、安装会话/配置及邮箱开关挑战表，0001～0005 保持原校验。旧 v5 通过原入口兼容运行，不自动升级；本轮没有改动原正式库。新库及配套密钥如何启动见[新部署指南](NEW_INSTALL.md)，下文为历史升级记录。
 
 2026-10-04 多邮箱更新：源码与正式库已为 v5/32 表，用户单独授权后已备份追加 `smtp_provider_types`、`smtp_provider_configs`，并保存 163 配置。旧 `smtp_config` 保留，QQ 配置、旧表业务记录及原密钥保持一致，两套授权码均加密保存。迁移、配置和验证证据见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)；服务启动仍不自动迁移。

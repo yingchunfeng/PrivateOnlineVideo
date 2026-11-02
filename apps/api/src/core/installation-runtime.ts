@@ -13,6 +13,7 @@ import type { AuthSettings } from "../modules/auth/settings.js";
 import { SetupService } from "../modules/setup/service.js";
 import { InstallationSettingsService } from "../modules/installation-settings/service.js";
 import { createMediaModule, UnavailableMetadataInspector } from "../modules/media/index.js";
+import { createSiteSettings } from "../modules/site-settings/service.js";
 import { loadLibraryConfig, validateLibraryConfig } from "./library-config.js";
 import { recoverLibraryConfiguration } from "./library-configuration.js";
 
@@ -87,7 +88,7 @@ export async function buildInstallationApp(options: InstallationRuntimeOptions) 
   const app = await buildApp({ config, ...(options.logger === undefined ? {} : { logger: options.logger }), auth, setup, installationSettings: installation,
     validateInstallation: prepareBusiness,
     backend: { database, auth, config },
-    media: { register: createMediaModule({ ...config.media, metadata: new UnavailableMetadataInspector() }),
+    media: { register: createMediaModule({ ...config.media, metadata: new UnavailableMetadataInspector(), getMaxUploadBytes: () => createSiteSettings(database, config).view().maxUploadBytes }),
       dependencies: { kind: config.environment === "production" ? "production" : "development", config, auth, ...repositories, storage, now: options.settingsOptions?.now ?? (() => new Date()) } },
     ...(options.onClose ? { onClose: options.onClose } : {}) });
   return { app, auth, setup, installation };

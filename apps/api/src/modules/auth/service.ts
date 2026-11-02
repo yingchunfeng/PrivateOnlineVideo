@@ -15,6 +15,7 @@ import type { MailSender, MailMessage } from "./mail.js";
 import { csrfToken, decryptSecret, encryptSecret, equalToken, hashPassword, newRecoveryCodes, randomToken, tokenHash, totp, verifyPassword } from "./crypto.js";
 import { authenticationUser, hasOnboardingSchema, saveLoginMode } from "./login-mode.js";
 import type { AuthenticationUser } from "./login-mode.js";
+import { GuestService } from "../guests/service.js";
 
 type User = AuthenticationUser;
 type Operation = typeof s.accountOperations.$inferSelect;
@@ -30,18 +31,20 @@ export function currentUser(user: User): CurrentUser { return { id: user.id, dis
 export class AuthService implements AuthGuard {
   private hashing = 0;
   readonly cookieName: string;
+  readonly guests: GuestService;
   mailConfigurationTested?: (email: string) => boolean;
   constructor(readonly database: AppDatabase, readonly key: Buffer, readonly settings: AuthSettings, readonly now: () => Date = () => new Date(), readonly mailSender: MailSender = new UnconfiguredMailSender()) {
     if (key.length !== 32) throw new Error("invalid auth key");
     this.cookieName = settings.secureCookie ? "__Host-ov_session" : "ov_session";
+    this.guests = new GuestService(database, now);
   }
   setMailConfigurationCheck(check: (email: string) => boolean): void { this.mailConfigurationTested = check; }
   private audit(action: string, ownerId?: string) { this.database.orm.insert(s.auditEvents).values({ id: randomUUID(), ownerId: ownerId ?? null, action, createdAt: this.now().toISOString() }).run(); }
   assertOrigin(request: FastifyRequest): void {
     if (typeof request.headers.origin !== "string" || !this.settings.allowedOrigins.includes(request.headers.origin) || request.headers["sec-fetch-site"] === "cross-site") throw new HttpError("CSRF_REJECTED");
   }
-  private attempt(ip: string) {
-    const keys = ["account", `ip:${tokenHash(ip)}`]; const at = this.now().getTime();
+  private attempt(ip: string, scope = "account") {
+    const keys = scope === "account" ? ["account", `ip:${tokenHash(ip)}`] : [scope, `${scope}:ip:${tokenHash(ip)}`]; const at = this.now().getTime();
     this.database.client.transaction(() => {
       for (const key of keys) {
         const row = this.database.orm.select().from(s.loginAttempts).where(eq(s.loginAttempts.key, key)).get();
@@ -93,20 +96,47 @@ export class AuthService implements AuthGuard {
     const token = request.cookies?.[this.cookieName];
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError("AUTH_REQUIRED");
     const row = this.database.orm.select().from(s.loginSessions).where(eq(s.loginSessions.tokenHash, tokenHash(token))).get();
-    if (!row || row.revokedAt || row.expiresAt <= this.now().toISOString()) throw new HttpError("SESSION_EXPIRED");
+    if (!row) throw new HttpError("SESSION_EXPIRED");
+    const guest = this.guests.accessForSession(row.id);
+    if (row.revokedAt || row.expiresAt <= this.now().toISOString()) throw new HttpError(guest ? "GUEST_EXPIRED" : "SESSION_EXPIRED");
     const stored = this.database.orm.select().from(s.users).where(eq(s.users.id, row.ownerId)).get();
     const user = stored ? authenticationUser(this.database, stored) : undefined;
     if (!user || !accountReady(user) || row.authVersion !== user.authVersion) throw new HttpError("SESSION_EXPIRED");
-    return { row, user, token };
+    return { row, user, token, guest };
   }
   async requireUser(request: FastifyRequest, options: { mutation: boolean }): Promise<AuthPrincipal> {
     this.assertBusinessReady();
-    const { row, user, token } = this.session(request);
+    const { row, user, token, guest } = this.session(request);
     if (options.mutation) { this.assertOrigin(request); if (!equalToken(request.headers["x-csrf-token"], csrfToken(token, this.key))) throw new HttpError("CSRF_REJECTED"); }
     this.database.orm.update(s.loginSessions).set({ lastSeenAt: this.now().toISOString() }).where(eq(s.loginSessions.id, row.id)).run();
-    return { user: currentUser(user), loginSessionId: row.id };
+    return { user: guest ? { ...currentUser(user), displayName: guest.name, role: "guest", authMethod: "password", totpEnabled: false, emailMasked: null, emailVerified: false } : currentUser(user),
+      loginSessionId: row.id, ...(guest ? { guest } : {}) };
   }
-  async me(request: FastifyRequest): Promise<AuthSession> { const principal = await this.requireUser(request, { mutation: false }); return { user: principal.user, csrfToken: csrfToken(this.session(request).token, this.key) }; }
+  async requireAdmin(request: FastifyRequest, options: { mutation: boolean }): Promise<AuthPrincipal> {
+    const principal = await this.requireUser(request, options);
+    if (principal.guest || principal.user.role === "guest") throw new HttpError("FORBIDDEN");
+    return principal;
+  }
+  async me(request: FastifyRequest): Promise<AuthSession> { const principal = await this.requireUser(request, { mutation: false }); return { user: principal.user, csrfToken: csrfToken(this.session(request).token, this.key), ...(principal.guest ? { guest: principal.guest } : {}) }; }
+  async guestLogin(request: FastifyRequest, input: { password: string }): Promise<{ token: string; data: AuthSession; expiresAt: string }> {
+    this.assertBusinessReady(); this.assertOrigin(request);
+    if (this.hashing >= 2) throw new HttpError("RATE_LIMITED");
+    const keys = this.attempt(request.ip, "guest-login"); this.hashing++;
+    try {
+      const verified = await this.guests.verifyLogin(input.password); const user = this.mainAccount();
+      return this.database.client.transaction(() => {
+        this.snapshot(user); const guest = this.guests.confirmLogin(verified);
+        if (verified.owner_id !== user.id) throw new HttpError("INVALID_CREDENTIALS");
+        const token = randomToken(); const id = randomUUID(); const at = this.now().toISOString();
+        const expiresAt = new Date(Math.min(this.now().getTime() + this.settings.sessionTtlMs, Date.parse(guest.expiresAt))).toISOString();
+        this.database.orm.insert(s.loginSessions).values({ id, ownerId: user.id, authVersion: user.authVersion, tokenHash: tokenHash(token), createdAt: at, lastSeenAt: at, expiresAt }).run();
+        this.database.orm.insert(s.guestSessions).values({ loginSessionId: id, guestId: guest.id }).run();
+        this.clearAttempts(keys); this.audit(`guest_login_succeeded:${guest.id}`, user.id);
+        return { token, expiresAt, data: { user: { ...currentUser(user), role: "guest" as const, displayName: guest.name, authMethod: "password" as const,
+          totpEnabled: false, emailMasked: null, emailVerified: false }, guest, csrfToken: csrfToken(token, this.key) } };
+      }).immediate();
+    } finally { this.hashing--; }
+  }
   private mainAccount(): User {
     const user = this.database.orm.select().from(s.users).where(eq(s.users.singleton, 1)).get();
     if (!user) throw new HttpError("SERVICE_NOT_CONFIGURED");
@@ -151,7 +181,7 @@ export class AuthService implements AuthGuard {
   private requireEmail(user: User): string { if (user.authMethod !== "email" || !user.email || !user.emailVerifiedAt) throw new HttpError("EMAIL_REQUIRED"); return this.emailAddress(user.email); }
   loginOptions(): LoginOptions { return { authMethod: this.mainAccount().authMethod, serverTime: this.now().toISOString(), emailProviders: enabledEmailProviders(this.database) }; }
   async security(request: FastifyRequest): Promise<AccountSecuritySummary> {
-    await this.requireUser(request, { mutation: false }); const user = this.session(request).user;
+    await this.requireAdmin(request, { mutation: false }); const user = this.session(request).user;
     return { authMethod: user.authMethod, authVersion: user.authVersion, email: user.email, emailVerified: !!user.emailVerifiedAt,
       emailVerifiedAt: user.emailVerifiedAt, totpAvailable: user.totpEnabled, serverTime: this.now().toISOString(), emailProviders: enabledEmailProviders(this.database) };
   }
@@ -250,7 +280,7 @@ export class AuthService implements AuthGuard {
     return this.challenge(request, user, "login", this.requireEmail(user), null, null);
   }
   async bindEmailRequest(request: FastifyRequest, input: BindEmailRequest): Promise<EmailChallenge> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount();
     if (user.authMethod !== "totp") throw new HttpError("AUTH_METHOD_MISMATCH");
     const keys = await this.password(user, input.currentPassword, request, true, false);
     if (this.totpDelta(user, input.totp) === null) throw new HttpError("SECONDARY_AUTH_FAILED"); this.clearAttempts(keys);
@@ -268,7 +298,7 @@ export class AuthService implements AuthGuard {
     if (hasOnboardingSchema(this.database)) this.database.client.prepare("UPDATE email_verification_challenges SET invalidated_at=? WHERE owner_id=? AND invalidated_at IS NULL").run(at, user.id);
   }
   async bindEmailConfirm(request: FastifyRequest, input: BindEmailConfirmRequest): Promise<AccountMutationResult> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount();
     if (user.authMethod !== "totp") throw new HttpError("AUTH_METHOD_MISMATCH");
     const keys = await this.password(user, input.currentPassword, request, true, false);
     const error = this.database.client.transaction(() => {
@@ -286,7 +316,7 @@ export class AuthService implements AuthGuard {
     return { success: true, reloginRequired: true, notificationStatus: "not_required" };
   }
   async passwordRequest(request: FastifyRequest, input: PasswordCodeRequest): Promise<EmailChallenge> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
     await this.password(user, input.currentPassword, request);
     return this.challenge(request, user, "change_password", email, principal.loginSessionId, { type: "change_password", targetEmail: email });
   }
@@ -305,7 +335,7 @@ export class AuthService implements AuthGuard {
     }
   }
   async passwordConfirm(request: FastifyRequest, input: ChangePasswordRequest): Promise<AccountMutationResult> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
     await this.password(user, input.currentPassword, request);
     if (input.newPassword.length < 12 || input.newPassword.length > 128 || input.newPassword !== input.confirmPassword) throw new HttpError("PASSWORD_POLICY_FAILED");
     if (input.newPassword === input.currentPassword) throw new HttpError("PASSWORD_UNCHANGED");
@@ -322,7 +352,7 @@ export class AuthService implements AuthGuard {
     return { success: true, reloginRequired: true, notificationStatus: await this.notify(outcome.notificationId!, email, "password_changed") };
   }
   async directPasswordChange(request: FastifyRequest, input: { currentPassword: string; newPassword: string; confirmPassword: string }): Promise<AccountMutationResult> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount();
     if (user.authMethod !== "password") throw new HttpError("AUTH_METHOD_MISMATCH");
     await this.password(user, input.currentPassword, request);
     if (input.newPassword.length < 12 || input.newPassword.length > 128 || input.newPassword !== input.confirmPassword) throw new HttpError("PASSWORD_POLICY_FAILED");
@@ -351,7 +381,7 @@ export class AuthService implements AuthGuard {
       row.login_session_id, row.auth_version, row.enabled, row.target_email, code])).digest("hex");
   }
   async emailVerificationCode(request: FastifyRequest, input: { currentPassword: string; enabled: boolean; email?: string }): Promise<EmailChallenge> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount();
     await this.password(user, input.currentPassword, request);
     const targetEmail = this.verificationTarget(user, input); const code = randomInt(0, 1_000_000).toString().padStart(6, "0"); const id = randomUUID();
     const row = this.database.client.transaction(() => {
@@ -387,7 +417,7 @@ export class AuthService implements AuthGuard {
     return { challengeId: id, operationId: null, maskedEmail: maskEmail(targetEmail), serverTime: this.now().toISOString(), expiresAt: row.expires_at, resendAt: row.resend_at };
   }
   async emailVerificationConfirm(request: FastifyRequest, input: { currentPassword: string; enabled: boolean; email?: string; challengeId: string; code: string }): Promise<AccountMutationResult> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount();
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount();
     await this.password(user, input.currentPassword, request); const email = this.verificationTarget(user, input);
     const error = this.database.client.transaction((): ErrorCode | null => {
       this.snapshot(user); this.liveSession(principal.loginSessionId, user); this.verificationTarget(user, input);
@@ -411,13 +441,13 @@ export class AuthService implements AuthGuard {
     return { success: true, reloginRequired: true, notificationStatus: "not_required" };
   }
   async emailChangeRequest(request: FastifyRequest, input: ChangeEmailRequest): Promise<EmailChallenge> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
     await this.password(user, input.currentPassword, request); const targetEmail = this.emailAddress(input.newEmail);
     if (targetEmail === email) throw new HttpError("EMAIL_UNCHANGED");
     return this.challenge(request, user, "change_email_old", email, principal.loginSessionId, { type: "change_email", targetEmail });
   }
   async emailChangeVerifyOld(request: FastifyRequest, input: VerifyOldEmailRequest): Promise<EmailChangeAuthorization> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
     await this.password(user, input.currentPassword, request);
     const outcome = this.database.client.transaction(() => {
       this.snapshot(user); this.liveSession(principal.loginSessionId, user); const op = this.operation(input.operationId, user, principal.loginSessionId, "change_email", "pending");
@@ -429,13 +459,13 @@ export class AuthService implements AuthGuard {
     return { operationId: outcome.op!.id, targetEmailMasked: maskEmail(outcome.op!.targetEmail), expiresAt: outcome.op!.expiresAt, serverTime: this.now().toISOString() };
   }
   async emailChangeRequestNew(request: FastifyRequest, input: AccountOperationRequest): Promise<EmailChallenge> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); this.requireEmail(user);
     const op = this.operation(input.operationId, user, principal.loginSessionId, "change_email", "old_verified");
     requireSupportedEmailProvider(this.database, op.targetEmail);
     return this.challenge(request, user, "change_email_new", op.targetEmail, principal.loginSessionId, { operation: op });
   }
   async emailChangeConfirm(request: FastifyRequest, input: ChangeEmailConfirmRequest): Promise<AccountMutationResult> {
-    const principal = await this.requireUser(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
+    const principal = await this.requireAdmin(request, { mutation: true }); const user = this.mainAccount(); const email = this.requireEmail(user);
     await this.password(user, input.currentPassword, request);
     const outcome = this.database.client.transaction(() => {
       this.snapshot(user); this.liveSession(principal.loginSessionId, user); const op = this.operation(input.operationId, user, principal.loginSessionId, "change_email", "old_verified");
@@ -450,7 +480,7 @@ export class AuthService implements AuthGuard {
     return { success: true, reloginRequired: true, notificationStatus: await this.notify(outcome.notificationId!, email, "email_changed") };
   }
   async cancelOperation(request: FastifyRequest, input: AccountOperationRequest): Promise<{ success: true }> {
-    const principal = await this.requireUser(request, { mutation: true });
+    const principal = await this.requireAdmin(request, { mutation: true });
     this.database.client.transaction(() => {
       const user = this.mainAccount(); this.liveSession(principal.loginSessionId, user);
       const op = this.database.orm.select().from(s.accountOperations).where(eq(s.accountOperations.id, input.operationId)).get();
@@ -460,12 +490,13 @@ export class AuthService implements AuthGuard {
     }).immediate(); return { success: true };
   }
   async sessions(request: FastifyRequest): Promise<LoginSession[]> {
-    const principal = await this.requireUser(request, { mutation: false });
+    const principal = await this.requireAdmin(request, { mutation: false });
     return this.database.orm.select().from(s.loginSessions).where(and(eq(s.loginSessions.ownerId, principal.user.id), isNull(s.loginSessions.revokedAt))).orderBy(s.loginSessions.createdAt).all()
       .map(row => ({ id: row.id, createdAt: row.createdAt, lastSeenAt: row.lastSeenAt, expiresAt: row.expiresAt, isCurrent: row.id === principal.loginSessionId }));
   }
   async revoke(request: FastifyRequest, id?: string): Promise<void> {
     const principal = await this.requireUser(request, { mutation: true }); const target = id ?? principal.loginSessionId;
+    if (principal.guest && target !== principal.loginSessionId) throw new HttpError("FORBIDDEN");
     this.database.client.transaction(() => {
       const row = this.database.orm.select().from(s.loginSessions).where(and(eq(s.loginSessions.id, target), eq(s.loginSessions.ownerId, principal.user.id))).get();
       if (!row) throw new HttpError("NOT_FOUND");

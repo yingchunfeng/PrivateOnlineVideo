@@ -1,4 +1,4 @@
-import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, PART_CHECKSUM_HEADER, SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
+import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, isVideoDuration, PART_CHECKSUM_HEADER, SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
 import type { ApplicationUsage, AuthSession, Category, CreateUploadRequest, EmailChallenge, EmailChallengePurpose, ErrorCode, ImportPreview, LibraryConfiguration, LibraryGroup, LoginRequest, LoginSession, PlaybackSession, SaveLibraryConfigurationRequest, Tag, UploadTask, VideoDetail, UploadedPart } from "@online-video/shared";
 import type { Transport } from "./client";
 
@@ -15,7 +15,7 @@ const initialTags: Tag[] = [{ id: "tag-outdoor", name: "户外", createdAt: now(
 const fixtureVideo = (id: string, title: string, categoryId: string, status: VideoDetail["status"] = "ready"): VideoDetail => ({ id, title, categoryId, groupIds: categoryId === "cat-travel" ? ["group-travel"] : [], tagIds: categoryId === "cat-travel" ? ["tag-outdoor"] : [], durationSeconds: status === "ready" ? 12 : null, sizeBytes: 12 * 1048576, status, thumbnailUrl: null, createdAt: now(), codec: status === "ready" ? "VP8（开发样例）" : null, width: status === "ready" ? 640 : null, height: status === "ready" ? 360 : null, playable: status === "ready", lastPositionSeconds: 0 });
 const initialVideos = [fixtureVideo("video-lake", "山间的一次散步", "cat-travel"), fixtureVideo("video-city", "傍晚，回家的路", "cat-life"), fixtureVideo("video-sun", "日光里的小片段", "cat-default"), fixtureVideo("video-processing", "正在整理的手机原片", "cat-default", "processing"), fixtureVideo("video-hevc", "HEVC 原片 · 需要兼容副本", "cat-default", "unsupported"), fixtureVideo("video-failed", "元数据处理失败的样例", "cat-default", "failed"), ...Array.from({ length: 8 }, (_, i) => fixtureVideo(`video-extra-${i}`, `旅途记录 ${i + 1}`, "cat-travel"))];
 const portrait = initialVideos.find(video => video.id === "video-city")!; portrait.width = 360; portrait.height = 640;
-interface MockState { categories: Category[]; groups: LibraryGroup[]; tags: Tag[]; videos: VideoDetail[]; uploads: Record<string, UploadTask>; uploadMeta: Record<string, { title: string; categoryId: string; groupIds?: string[]; tagIds?: string[]; tags?: string[] }>; configurationVersion?: number; categoryTags?: Record<string, string[]> }
+interface MockState { categories: Category[]; groups: LibraryGroup[]; tags: Tag[]; videos: VideoDetail[]; uploads: Record<string, UploadTask>; uploadMeta: Record<string, { title: string; categoryId: string; groupIds?: string[]; tagIds?: string[]; tags?: string[] }>; configurationVersion?: number; categoryTags?: Record<string, string[]>; siteSettings?: { version: number; defaultTheme: "light" | "dark"; maxUploadBytes: number } }
 const stateKey = "ov.dev-mock.data.v1";
 function loadState(): MockState {
     try { const raw = sessionStorage.getItem(stateKey); if (raw) { const loaded = JSON.parse(raw) as MockState; loaded.groups ??= structuredClone(initialGroups); loaded.tags ??= structuredClone(initialTags); for (const c of loaded.categories) c.isDefault = c.id === "cat-default"; const vertical = loaded.videos.find(v => v.id === "video-city"); if (vertical) { vertical.width = 360; vertical.height = 640; } return loaded; } } catch { /* Mock 缓存不影响真实接口。 */ }
@@ -39,7 +39,7 @@ type MockChallenge = EmailChallenge & { purpose: EmailChallengePurpose; target: 
 const operations = new Map<string, MockOperation>();
 const challenges = new Map<string, MockChallenge>();
 const maskedEmail = (email: string) => { const [name, domain] = email.split("@"); return `${name?.slice(0, 1)}***@${domain}`; };
-const authSession = (): AuthSession => ({ user: { id: "mock-owner", displayName: "我的私人空间", totpEnabled: true, authMethod: account.authMethod, authVersion: account.authVersion, emailMasked: account.email ? maskedEmail(account.email) : null, emailVerified: !!account.emailVerifiedAt }, csrfToken: csrf });
+const authSession = (): AuthSession => ({ user: { id: "mock-owner", displayName: "我的私人空间", totpEnabled: true, authMethod: account.authMethod, authVersion: account.authVersion, emailMasked: account.email ? maskedEmail(account.email) : null, emailVerified: !!account.emailVerifiedAt }, csrfToken: csrf, defaultTheme: state.siteSettings?.defaultTheme ?? "light" });
 const ok = (data: unknown) => Response.json({ data });
 const fail = (code: ErrorCode) => Response.json({ error: { code, message: ERROR_DEFINITIONS[code].message, requestId: `mock-${crypto.randomUUID()}` } }, { status: ERROR_DEFINITIONS[code].status });
 const id = () => crypto.randomUUID();
@@ -213,9 +213,29 @@ export function createMockTransport(): Transport {
       if (source.origin !== "https://oss.meetdawn.top" || !source.pathname.startsWith("/onlineVideo/") || source.search || source.hash || !body.title?.trim() || !state.categories.some(category => category.id === body.categoryId && !category.archivedAt) || !Array.isArray(body.tags)) return fail("VALIDATION_ERROR");
       const video = { ...fixtureVideo(id(), body.title.trim(), body.categoryId, "processing"), tags: body.tags, objectKey: decodeURIComponent(source.pathname.slice(1)), publicUrl: source.href, fileName: decodeURIComponent(source.pathname.split("/").at(-1) ?? "video") }; state.videos.unshift(video); persist(); return ok(video);
     }
-    const videoMatch = path.match(/^\/api\/videos\/([^/]+)(?:\/(progress|playback-sessions|cover))?$/);
+    const videoMatch = path.match(/^\/api\/videos\/([^/]+)(?:\/(progress|playback-sessions|cover|duration))?$/);
     if (videoMatch) {
       const video = state.videos.find(v => v.id === videoMatch[1]); if (!video) return fail("NOT_FOUND");
+      if (videoMatch[2] === "duration") {
+        const body = bodyOf<{ durationSeconds: number; expectedObjectKey: string }>(init);
+        if (method !== "PUT" || !isVideoDuration(body.durationSeconds)) return fail("VALIDATION_ERROR");
+        if (body.expectedObjectKey !== publicVideo(video).objectKey) return fail("FILE_MISMATCH");
+        if (!isVideoDuration(video.durationSeconds)) video.durationSeconds = body.durationSeconds;
+        persist(); return ok(publicVideo(video));
+      }
+      if (method === "DELETE" && !videoMatch[2]) {
+        if (bodyOf<{ confirm?: boolean }>(init).confirm !== true) return fail("VALIDATION_ERROR");
+        if ([...playback.values()].some(session => session.videoId === video.id) || Object.values(state.uploads).some(task => task.videoId === video.id && task.status !== "completed")) return fail("VIDEO_RECORD_BUSY");
+        const current = publicVideo(video);
+        const result = { videoId: video.id, title: video.title, objects: [
+          { role: "original", objectKey: current.objectKey!, bucket: null, publicUrl: current.publicUrl! },
+          { role: "playback", objectKey: current.objectKey!, bucket: null, publicUrl: current.publicUrl! },
+          ...(current.coverObjectKey ? [{ role: "thumbnail", objectKey: current.coverObjectKey, bucket: null, publicUrl: current.coverUrl ?? null }] : [])
+        ] };
+        state.videos = state.videos.filter(item => item.id !== video.id);
+        for (const task of Object.values(state.uploads)) if (task.videoId === video.id) task.videoId = null;
+        persist(); return ok(result);
+      }
       if (videoMatch[2] === "cover") { if (!(init?.body instanceof Blob) || init.body.size > 1048576 || init.body.type !== "image/jpeg") return fail("VALIDATION_ERROR"); video.coverObjectKey = `onlineVideo/${video.categoryId}/covers/mock-${video.id}.jpg`; video.coverUrl = `https://oss.meetdawn.top/${video.coverObjectKey}`; video.coverStatus = "saved"; persist(); return ok(publicVideo(video)); }
       if (videoMatch[2] === "progress") { if (method === "PUT") { const pos = bodyOf<{ positionSeconds: number }>(init).positionSeconds; if (!Number.isFinite(pos) || pos < 0 || (video.durationSeconds !== null && pos > video.durationSeconds)) return fail("VALIDATION_ERROR"); video.lastPositionSeconds = pos; persist(); } return ok({ videoId: video.id, positionSeconds: video.lastPositionSeconds, updatedAt: video.lastPositionSeconds === 0 ? null : now() }); }
       if (videoMatch[2] === "playback-sessions") {
@@ -227,7 +247,19 @@ export function createMockTransport(): Transport {
     }
     const playbackMatch = path.match(/^\/api\/playback-sessions\/([^/]+)\/(heartbeat|close)$/);
     if (playbackMatch) { const session = playback.get(playbackMatch[1]!); if (!session) return fail("NOT_FOUND"); if (playbackMatch[2] === "close") { playback.delete(session.id); return ok({ success: true }); } if (scenario === "limit") return fail("TRANSFER_LIMIT_EXCEEDED"); const renewed = { ...session, expiresAt: expires() }; playback.set(session.id, renewed); return ok(renewed); }
-    if (path === "/api/settings/limits") return ok({ maxUploadBytes: 2147483648, partSizeBytes: 262144, maxUploadConcurrency: 1, maxPlaybackSessions: 3, maxAuthorizationsPerMinute: 12 });
+    if (path === "/api/settings/site") {
+      const current = state.siteSettings ?? { version: 0, defaultTheme: "light" as const, maxUploadBytes: 2147483648 };
+      if (method === "PATCH") {
+        const body = bodyOf<Record<string, unknown>>(init);
+        if (Object.keys(body).some(key => !["version", "defaultTheme", "maxUploadBytes"].includes(key)) || !("defaultTheme" in body || "maxUploadBytes" in body) ||
+          ("defaultTheme" in body && !["light", "dark"].includes(body.defaultTheme as string)) ||
+          ("maxUploadBytes" in body && (!Number.isSafeInteger(body.maxUploadBytes) || (body.maxUploadBytes as number) <= 0 || (body.maxUploadBytes as number) > 262144 * 10000))) return fail("VALIDATION_ERROR");
+        if (body.version !== current.version) return fail("CONFIG_VERSION_CONFLICT");
+        state.siteSettings = { version: current.version + 1, defaultTheme: (body.defaultTheme ?? current.defaultTheme) as "light" | "dark", maxUploadBytes: (body.maxUploadBytes ?? current.maxUploadBytes) as number }; persist();
+      }
+      return ok({ ...(state.siteSettings ?? current), maxConfigurableUploadBytes: 262144 * 10000, partSizeBytes: 262144, persistenceAvailable: true });
+    }
+    if (path === "/api/settings/limits") return ok({ maxUploadBytes: state.siteSettings?.maxUploadBytes ?? 2147483648, partSizeBytes: 262144, maxUploadConcurrency: 1, maxPlaybackSessions: 3, maxAuthorizationsPerMinute: 12 });
     if (path === "/api/settings/usage") {
       if (scenario === "usageUnavailable") return fail("SERVICE_NOT_CONFIGURED");
       const start = new Date(); start.setUTCHours(0, 0, 0, 0);
@@ -245,7 +277,7 @@ export function createMockTransport(): Transport {
       if (scenario === "storage") return fail("STORAGE_UNAVAILABLE");
       const body = bodyOf<CreateUploadRequest>(init);
       if (body.clientRequestId) { const existing = Object.values(state.uploads).find(task => task.clientRequestId === body.clientRequestId); if (existing) return ok(existing); }
-      if (!Number.isSafeInteger(body.sizeBytes) || body.sizeBytes <= 0 || !body.fileName || !body.title || !state.categories.some(c => c.id === body.categoryId)) return fail("VALIDATION_ERROR");
+      if (!Number.isSafeInteger(body.sizeBytes) || body.sizeBytes <= 0 || body.sizeBytes > (state.siteSettings?.maxUploadBytes ?? 2147483648) || !body.fileName || !body.title || !state.categories.some(c => c.id === body.categoryId)) return fail("VALIDATION_ERROR");
       const task: UploadTask = { id: id(), videoId: null, fileName: body.fileName, sizeBytes: body.sizeBytes, partSizeBytes: 262144, status: "uploading", uploadedParts: [], createdAt: now(), title: body.title, categoryId: body.categoryId, groupIds: body.groupIds ?? [], tagIds: body.tagIds ?? [], tags: body.tags ?? [], ...(body.clientRequestId ? { clientRequestId: body.clientRequestId } : {}) };
       state.uploads[task.id] = task; state.uploadMeta[task.id] = { title: body.title, categoryId: body.categoryId, groupIds: body.groupIds ?? [], tagIds: body.tagIds ?? [], tags: body.tags ?? [] }; persist(); return ok(task);
     }

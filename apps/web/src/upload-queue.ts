@@ -4,6 +4,7 @@ import { generateLocalCover } from "./cover";
 import type { LocalCover } from "./cover";
 import { completeTask, uploadFile, validateTask, validateUploadSize, verifyFile } from "./upload";
 import { TaskCompletionEffects } from "./space-enhancement-state";
+import { isVideoDuration, readMediaDuration, saveMediaDuration } from "./media-duration";
 
 export type LocalTaskState = "prepared" | "creating" | "createFailed" | "queued" | "uploading" | "paused" | "verifying" | "confirming" | "savingCover" | "completed" | "failed";
 export interface PreparedVideo {
@@ -11,6 +12,7 @@ export interface PreparedVideo {
   fileName: string; sizeBytes: number; validationError?: string | undefined;
   cover?: LocalCover | undefined; coverState: "waiting" | "working" | "ready" | "failed"; coverError?: string | undefined;
   manualCoverTime?: number | undefined;
+  durationState?: "working" | "saved" | "failed" | undefined; durationError?: string | undefined;
   state: LocalTaskState; createRequest?: CreateUploadRequest | undefined; task?: UploadTask | undefined; video?: VideoDetail | undefined; error?: unknown; notice?: string | undefined;
 }
 export const validVideoExtension = (name: string) => /\.(mp4|mov|webm|mkv|m4v)$/i.test(name);
@@ -26,11 +28,13 @@ export class UploadQueue {
   private listeners = new Set<() => void>();
   private transfer: { id: string; controller: AbortController } | undefined;
   private previews: { id: string; controller: AbortController } | undefined;
+  private durationWork: { id: string; controller: AbortController } | undefined;
   private creating = false;
   private stopped = false;
+  private deletedVideos = new Set<string>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   snapshot = () => this.entries;
-  constructor(private client: ApiClient, private coverGenerator = generateLocalCover) {}
+  constructor(private client: ApiClient, private coverGenerator = generateLocalCover, private durationReader = readMediaDuration) {}
   private update(id: string, patch: Partial<PreparedVideo>) { this.entries = this.entries.map(entry => entry.clientId === id ? { ...entry, ...patch } : entry); this.listeners.forEach(listener => listener()); }
   private changed() { this.entries = [...this.entries]; this.listeners.forEach(listener => listener()); }
   private find(id: string) { return this.entries.find(entry => entry.clientId === id); }
@@ -80,8 +84,22 @@ export class UploadQueue {
   private async saveCover(entry: PreparedVideo, signal: AbortSignal) {
     const current = this.find(entry.clientId); const video = current?.video; if (!video || !current.cover) return;
     this.update(entry.clientId, { state: "savingCover", error: undefined });
-    try { const saved = await this.client.image<VideoDetail>(`/api/videos/${encodeURIComponent(video.id)}/cover`, current.cover.blob, signal); if (saved.id !== video.id || !saved.coverUrl || saved.coverStatus !== "saved") throw new ApiError("INVALID_RESPONSE", "后端尚未确认封面保存成功"); this.update(entry.clientId, { video: saved, task: { ...current.task!, coverUrl: saved.coverUrl, coverObjectKey: saved.coverObjectKey ?? null, coverStatus: "saved" }, state: "completed", error: undefined, notice: "视频已登记，封面已保存" }); }
-    catch (error) { this.update(entry.clientId, { state: "completed", error, notice: "视频已登记并可播放，封面保存失败，可单独补封面" }); }
+    try { const saved = await this.client.image<VideoDetail>(`/api/videos/${encodeURIComponent(video.id)}/cover`, current.cover.blob, signal); if (this.stopped || signal.aborted || this.find(entry.clientId)?.video?.id !== video.id || this.deletedVideos.has(video.id)) return; if (saved.id !== video.id || !saved.coverUrl || saved.coverStatus !== "saved") throw new ApiError("INVALID_RESPONSE", "后端尚未确认封面保存成功"); this.update(entry.clientId, { video: saved, task: { ...current.task!, coverUrl: saved.coverUrl, coverObjectKey: saved.coverObjectKey ?? null, coverStatus: "saved" }, state: "completed", error: undefined, notice: "视频已登记，封面已保存" }); }
+    catch (error) { if (!this.stopped && this.find(entry.clientId)?.video?.id === video.id && !this.deletedVideos.has(video.id)) this.update(entry.clientId, { state: "completed", error, notice: "视频已登记并可播放，封面保存失败，可单独补封面" }); }
+  }
+  private async saveDuration(id: string, signal: AbortSignal) {
+    const entry = this.find(id); if (!entry?.video) return;
+    if (isVideoDuration(entry.video.durationSeconds)) { this.update(id, { durationState: "saved", durationError: undefined }); return; }
+    this.update(id, { durationState: "working", durationError: undefined });
+    try {
+      if (!entry.file) throw new Error("本机没有原文件，可打开视频详情按需补采时长，无需重新上传");
+      const seconds = await this.durationReader(entry.file, signal);
+      if (signal.aborted || this.stopped || this.find(id)?.video?.id !== entry.video.id || this.deletedVideos.has(entry.video.id)) return;
+      const video = await saveMediaDuration(this.client, entry.video, seconds, signal);
+      if (!this.stopped && !signal.aborted && this.find(id)?.video?.id === entry.video.id && !this.deletedVideos.has(entry.video.id)) this.update(id, { video, durationState: "saved", durationError: undefined });
+    } catch (error) {
+      if (!this.stopped && this.find(id)?.video?.id === entry.video.id && !this.deletedVideos.has(entry.video.id)) this.update(id, { durationState: "failed", durationError: error instanceof Error && error.name !== "AbortError" ? error.message : "时长采集已停止，可单独重试或到详情补采" });
+    }
   }
   private async pump() {
     if (this.transfer || this.stopped) return;
@@ -100,27 +118,41 @@ export class UploadQueue {
         if (!entry.file) throw new ApiError("FILE_MISMATCH", "请重新选择原文件，经大小及已确认分片 SHA-256 校验后继续");
         result = await uploadFile(this.client, entry.file, task, controller.signal, value => this.update(entry.clientId, { task: value, state: value.status === "finalizing" ? "confirming" : "uploading", notice: value.status === "finalizing" ? "全部字节已上传，正在确认视频登记" : undefined }), part => this.update(entry.clientId, { notice: `已核对第 ${part} 个完成分片的 SHA-256` }));
       }
+      if (this.deletedVideos.has(result.video.id)) { this.update(entry.clientId, { task: { ...result.upload, videoId: null }, video: undefined, state: "completed", notice: "视频记录已删除，OSS 内容保留" }); return; }
       this.completionEffects.confirm(previousStatus, result.upload, result.video);
       this.update(entry.clientId, { task: result.upload, video: result.video, state: "completed", notice: "视频已登记并可播放", error: undefined });
+      await this.saveDuration(entry.clientId, controller.signal);
       // 预览仍在解析时稍后由 previewNext 再唤醒，不以占位图冒充封面。
       const current = this.find(entry.clientId)!;
       if (current.cover) await this.saveCover(current, controller.signal);
-    } catch (error) { this.update(entry.clientId, { state: controller.signal.aborted ? "paused" : "failed", error: controller.signal.aborted ? undefined : error, notice: controller.signal.aborted ? "本机已暂停；服务端已确认分片保留" : undefined }); }
+    } catch (error) { const current = this.find(entry.clientId); if (!(current?.task?.status === "completed" && current.task.videoId === null)) this.update(entry.clientId, { state: controller.signal.aborted ? "paused" : "failed", error: controller.signal.aborted ? undefined : error, notice: controller.signal.aborted ? "本机已暂停；服务端已确认分片保留" : undefined }); }
     finally { this.transfer = undefined; if (!this.stopped) void this.pump(); }
   }
   pause(id: string) { if (this.transfer?.id === id) this.transfer.controller.abort(); else if (this.find(id)?.state === "queued") this.update(id, { state: "paused" }); }
-  retry(id: string) { const entry = this.find(id); if (!entry) return; if (entry.state === "createFailed") { void this.submit([id]); return; } this.update(id, { state: "queued", error: undefined }); void this.pump(); }
+  retry(id: string) { const entry = this.find(id); if (!entry || entry.task?.status === "completed" && !entry.task.videoId) return; if (entry.state === "createFailed") { void this.submit([id]); return; } this.update(id, { state: "queued", error: undefined }); void this.pump(); }
+  detachVideo(videoId: string) {
+    this.deletedVideos.add(videoId);
+    for (const entry of this.entries.filter(item => item.video?.id === videoId || item.task?.videoId === videoId)) {
+      if (this.durationWork?.id === entry.clientId) this.durationWork.controller.abort();
+      if (this.transfer?.id === entry.clientId) this.transfer.controller.abort();
+      if (this.previews?.id === entry.clientId) this.previews.controller.abort();
+      if (entry.cover) URL.revokeObjectURL(entry.cover.url);
+      this.update(entry.clientId, { video: undefined, cover: undefined, coverState: "failed", durationState: undefined, durationError: undefined, error: undefined, state: "completed", notice: "视频记录已删除，OSS 内容保留", ...(entry.task ? { task: { ...entry.task, videoId: null, coverUrl: null, coverObjectKey: null, coverStatus: "missing" } } : {}) });
+    }
+  }
   async attach(task: UploadTask, file: File) {
+    if (task.status === "completed" && !task.videoId) throw new ApiError("NOT_FOUND", "视频记录已删除，保留的历史任务不能重新登记或补采此视频");
     const id = this.entries.find(entry => entry.task?.id === task.id)?.clientId ?? `task-${task.id}`;
     validateTask(task, file);
     const controller = new AbortController(); await verifyFile(file, task, controller.signal);
     const entry = this.find(id);
     const patch: PreparedVideo = { clientId: id, file, fileName: task.fileName, sizeBytes: task.sizeBytes, title: task.title ?? task.fileName, categoryId: task.categoryId ?? "", tags: task.tags ?? [], task, state: task.status === "completed" ? "completed" : "paused", coverState: entry?.cover ? "ready" : "waiting", cover: entry?.cover, notice: task.uploadedParts.length ? "大小与全部已确认分片 SHA-256 已匹配，可继续上传" : "大小已匹配；此任务尚无已确认分片，无法与原文件的已有 SHA-256 比对" };
     if (entry) this.update(id, patch); else { this.entries.push(patch); this.changed(); }
-    if (task.status === "completed" && task.videoId) { const video = await this.client.request<VideoDetail>(`/api/videos/${encodeURIComponent(task.videoId)}`); this.update(id, { video }); }
+    if (task.status === "completed" && task.videoId) { const video = await this.client.request<VideoDetail>(`/api/videos/${encodeURIComponent(task.videoId)}`); this.update(id, { video }); await this.saveDuration(id, controller.signal); }
     void this.previewNext(); return id;
   }
   recover(task: UploadTask) { let entry = this.entries.find(value => value.task?.id === task.id); if (!entry) { entry = { clientId: `task-${task.id}`, task, fileName: task.fileName, sizeBytes: task.sizeBytes, title: task.title ?? task.fileName, categoryId: task.categoryId ?? "", tags: task.tags ?? [], state: "paused", coverState: "failed" }; this.entries.push(entry); this.changed(); } this.retry(entry.clientId); }
   async retryCover(id: string) { const entry = this.find(id); if (!entry?.cover || !entry.video || this.transfer) return; const controller = new AbortController(); this.transfer = { id, controller }; try { await this.saveCover(entry, controller.signal); } finally { this.transfer = undefined; void this.pump(); } }
-  stop() { this.stopped = true; this.transfer?.controller.abort(); this.previews?.controller.abort(); this.entries.forEach(entry => { if (entry.cover) URL.revokeObjectURL(entry.cover.url); }); this.entries = []; this.changed(); }
+  async retryDuration(id: string) { if (this.stopped || this.durationWork || this.transfer) return; const controller = new AbortController(); this.durationWork = { id, controller }; try { await this.saveDuration(id, controller.signal); } finally { this.durationWork = undefined; } }
+  stop() { this.stopped = true; this.transfer?.controller.abort(); this.previews?.controller.abort(); this.durationWork?.controller.abort(); this.entries.forEach(entry => { if (entry.cover) URL.revokeObjectURL(entry.cover.url); }); this.entries = []; this.changed(); }
 }

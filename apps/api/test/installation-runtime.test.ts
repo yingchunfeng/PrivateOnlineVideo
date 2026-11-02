@@ -24,7 +24,7 @@ test("完整SQL新磁盘库→真实API安装→公共库上传→SMTP测试/邮
   const config = readInstallationConfig({ NODE_ENV: "test", API_PORT: "3000" });
   let runtime = await buildInstallationApp({ database, key: bootstrap.key, settings, config, settingsOptions: configuration, logger: false });
   let cookie = ""; let csrf = "";
-  const request = (url: string, method: "GET" | "POST" | "PUT" = "GET", payload?: object) => runtime.app.inject({ method, url,
+  const request = (url: string, method: "GET" | "POST" | "PUT" | "PATCH" = "GET", payload?: object) => runtime.app.inject({ method, url,
     headers: { origin: "http://127.0.0.1:5173", cookie, "x-csrf-token": csrf }, ...(payload ? { payload } : {}) });
   const absorb = (response: Awaited<ReturnType<typeof request>>, cookieName: string) => {
     const found = response.cookies.find(value => value.name === cookieName); if (found) cookie = `${cookieName}=${found.value}`;
@@ -54,6 +54,22 @@ test("完整SQL新磁盘库→真实API安装→公共库上传→SMTP测试/邮
     const category = library.json().data.categories[0]; assert.ok(category.id);
     const upload = await request("/api/uploads", "POST", { fileName: "sample.mp4", sizeBytes: 1024, title: "隔离上传", categoryId: category.id, tags: [], clientRequestId: "isolated-runtime-upload" });
     assert.equal(upload.statusCode, 200, upload.body); assert.ok(upload.json().data.objectKey.startsWith("demo-videos/"));
+    const site = await request("/api/settings/site", "PATCH", { version: 0, defaultTheme: "dark", maxUploadBytes: 512 });
+    assert.equal(site.statusCode, 200, site.body);
+    assert.equal((await request("/api/settings/limits")).json().data.maxUploadBytes, 512);
+    const tooLarge = await request("/api/uploads", "POST", { fileName: "large.mp4", sizeBytes: 513, title: "新任务应被拒绝", categoryId: category.id, tags: [] });
+    assert.equal(tooLarge.statusCode, 400);
+    assert.equal((await request("/api/uploads", "POST", { fileName: "sample.mp4", sizeBytes: 1024, title: "隔离上传", categoryId: category.id, tags: [], clientRequestId: "isolated-runtime-upload" })).json().data.id, upload.json().data.id);
+    const visitor = await request("/api/guests", "POST", { name: "运行时权限验收", expiresAt: new Date(Date.now() + 3600000).toISOString(), permissions: ["library", "upload", "pages", "configuration"] });
+    assert.equal(visitor.statusCode, 200, visitor.body);
+    const visitorLogin = await runtime.app.inject({ method: "POST", url: "/api/auth/guest/login", headers: { origin: "http://127.0.0.1:5173" }, payload: { password: visitor.json().data.password } });
+    assert.equal(visitorLogin.statusCode, 200, visitorLogin.body);
+    const visitorHeaders = { origin: "http://127.0.0.1:5173", cookie: `ov_session=${visitorLogin.cookies.find(value => value.name === "ov_session")!.value}`, "x-csrf-token": visitorLogin.json().data.csrfToken };
+    for (const [method, url] of [["GET", "/api/installation/settings"], ["PUT", "/api/installation/oss"], ["POST", "/api/installation/oss/test"], ["PUT", "/api/installation/mail"], ["POST", "/api/installation/mail/test"]] as const) {
+      const denied = await runtime.app.inject({ method, url, headers: visitorHeaders, ...(method === "GET" ? {} : { payload: {} }) });
+      assert.equal(denied.statusCode, 403, `${method} ${url}: ${denied.body}`);
+    }
+    assert.equal((await runtime.app.inject({ url: "/api/library", headers: visitorHeaders })).statusCode, 200);
     const mail = await request("/api/installation/mail", "PUT", { version: 1, providerCode: "qq", host: "smtp.qq.com", port: 465, secure: true,
       user: "example@qq.com", password: "isolated-mail-authorization", from: "example@qq.com" });
     assert.equal(mail.statusCode, 200, mail.body); assert.equal(testMail.length, 0);
@@ -68,6 +84,11 @@ test("完整SQL新磁盘库→真实API安装→公共库上传→SMTP测试/邮
     runtime = await buildInstallationApp({ database, key: restored.key, settings, config: readInstallationConfig({ NODE_ENV: "test" }), settingsOptions: configuration, logger: false });
     assert.equal((await request("/api/setup/status")).json().data.stage, "ready");
     assert.equal((await request("/api/auth/login/options")).json().data.authMethod, "email");
+    const loginCode = await request("/api/auth/login/code", "POST", { password }); assert.equal(loginCode.statusCode, 200, loginCode.body);
+    const loginMessage = sent.at(-1)!; if (loginMessage.kind !== "verification") throw new Error("missing login verification");
+    const relogin = await request("/api/auth/login", "POST", { authMethod: "email", password, challengeId: loginCode.json().data.challengeId, code: loginMessage.code });
+    assert.equal(relogin.statusCode, 200, relogin.body); assert.equal(relogin.json().data.defaultTheme, "dark"); absorb(relogin, "ov_session");
+    assert.equal((await request("/api/settings/limits")).json().data.maxUploadBytes, 512);
     assert.equal((await request("/api/setup/login", "POST", { password: "adminadmin", installationCode })).statusCode, 409);
     assert.equal(database.client.pragma("integrity_check", { simple: true }), "ok"); assert.deepEqual(database.client.pragma("foreign_key_check"), []);
     assert.equal((database.client.prepare("SELECT count(*) n FROM upload_tasks").get() as { n: number }).n, 1);

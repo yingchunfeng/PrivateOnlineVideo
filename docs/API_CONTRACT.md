@@ -1,5 +1,26 @@
 # 前后端与媒体模块契约 V0.5
 
+## 2026-11-02：站点设置、视频数据与受限访客
+
+以下接口沿用同源 Cookie、写操作 CSRF 与来源检查；访客登录同管理员登录一样先校验来源，不要求尚未取得的登录态 CSRF。共享 DTO 以 `packages/shared/src/site-settings.ts`、`guests.ts` 和 `dto.ts` 为准。
+
+| 方法与路径 | 用途与权限 |
+| --- | --- |
+| `GET /api/settings/site` | 仅管理员；返回默认外观、单文件上限、配置版本与 `persistenceAvailable` |
+| `PATCH /api/settings/site` | 仅管理员；携带 `version`，按需提交 `defaultTheme` 或 `maxUploadBytes`；版本冲突不覆盖新配置 |
+| `PUT /api/videos/:videoId/duration` | 管理员或具备视频编辑权限的访客；提交真实 `durationSeconds` 与 `expectedObjectKey`，只补存仍缺失且对象匹配的时长 |
+| `DELETE /api/videos/:videoId` | 管理员或具备视频删除权限的访客；请求体 `{confirm:true}`，仅删除数据库记录，返回可人工清理的对象路径，不调用 OSS 删除 |
+| `POST /api/auth/guest/login` | 公开登录入口，提交 `{password}`；验证临时密码和有效期后签发受限会话，返回身份、权限与 CSRF，不提供注册 |
+| `GET /api/guests` | 仅管理员；返回访客列表、服务端时间和持久化可用状态，不返回密码摘要或明文 |
+| `POST /api/guests` | 仅管理员；提交名称、到期时间和权限；新临时密码只在本次响应交付 |
+| `PATCH /api/guests/:guestId` | 仅管理员；提交名称、到期时间、权限及 `version`；冲突返回 `GUEST_VERSION_CONFLICT`，不覆盖最新记录 |
+| `POST /api/guests/:guestId/reset` | 仅管理员；提交 `{version}`；撤销全部旧会话，并一次交付新临时密码 |
+| `POST /api/guests/:guestId/revoke` | 仅管理员；提交 `{version}`；提前失效并撤销全部会话，不删除访客历史 |
+
+访客授权采用服务端默认拒绝策略：`library/upload/pages/tasks/configuration` 分别控制页面和相关接口，`video_edit/video_delete` 为独立操作权限且依赖 `library`。系统设置、账号安全、访客管理和全站默认外观不向访客开放；上传任务按访客归属校验，视频库仍共享。服务端逐请求验证期限、撤销状态及权限，失效后中止相关在途操作；OSS 公共直链不能随站内凭证撤回。
+
+站点设置和访客表分别来自 v7/v8；服务不在启动时升级旧库。完整 v8 新库 SQL 只用于新空库；已有库需另行确认备份和增量迁移。实际使用边界见[项目说明](../README.md#管理页面与访客)。
+
 ## 2026-10-26：新部署初始化与配置扩展
 
 新部署 v6 使用独立入口，流程见[新部署指南](NEW_INSTALL.md)。实际 DTO 以 `packages/shared/src/installation.ts` 和 `dto.ts` 为准；旧 v5 不自动迁移，原接口继续兼容。

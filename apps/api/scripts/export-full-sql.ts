@@ -16,7 +16,7 @@ export function fullInstallSql(): string {
     const providers = database.prepare("SELECT code,name,email_domain,smtp_host,enabled FROM smtp_provider_types ORDER BY code").all() as
       { code: string; name: string; email_domain: string; smtp_host: string; enabled: number }[];
     return [
-      "-- 云影匣：新部署完整 SQLite 结构（v6）。UTF-8，无 BOM。",
+      "-- 云影匣：新部署完整 SQLite 结构（v8）。UTF-8，无 BOM。",
       "-- 仅在新的空 .db 中整份执行；绝不能在现有正式库或旧测试库执行。",
       "-- 数据库工具必须遇错停止；若报错，在同一连接 ROLLBACK 后核查，不要继续执行或删除旧数据。",
       "-- 本文件由当前迁移结构生成，含真实版本校验记录；不要再叠加执行历史 SQL。",
@@ -27,7 +27,7 @@ export function fullInstallSql(): string {
       ...rows.map(row => `\n-- ${row.type}: ${row.name}\n${row.sql};`),
       "\n-- 内置支持的邮箱类型；无发信账号和授权码。",
       ...providers.map(row => `INSERT INTO smtp_provider_types(code,name,email_domain,smtp_host,enabled) VALUES(${[row.code, row.name, row.email_domain, row.smtp_host].map(literal).join(",")},${row.enabled});`),
-      "\n-- 对应 0001～0006 的结构来源校验；应用会核对版本、顺序和 SHA-256。",
+      "\n-- 对应 0001～0008 的结构来源校验；应用会核对版本、顺序和 SHA-256。",
       ...migrationManifest().map(row => `INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(${row.version},${literal(row.checksum)},strftime('%Y-%m-%dT%H:%M:%fZ','now'));`),
       "COMMIT;", "PRAGMA foreign_key_check;", "PRAGMA integrity_check;", ""
     ].join("\n");

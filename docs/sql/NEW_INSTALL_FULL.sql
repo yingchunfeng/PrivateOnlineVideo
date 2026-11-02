@@ -1,4 +1,4 @@
--- 云影匣：新部署完整 SQLite 结构（v6）。UTF-8，无 BOM。
+-- 云影匣：新部署完整 SQLite 结构（v8）。UTF-8，无 BOM。
 -- 仅在新的空 .db 中整份执行；绝不能在现有正式库或旧测试库执行。
 -- 数据库工具必须遇错停止；若报错，在同一连接 ROLLBACK 后核查，不要继续执行或删除旧数据。
 -- 本文件由当前迁移结构生成，含真实版本校验记录；不要再叠加执行历史 SQL。
@@ -341,6 +341,40 @@ CREATE TABLE email_verification_challenges (
   invalidated_at TEXT
 );
 
+-- table: site_settings
+CREATE TABLE site_settings (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  default_theme TEXT NOT NULL CHECK(default_theme IN ('light', 'dark')),
+  max_upload_bytes INTEGER NOT NULL CHECK(max_upload_bytes > 0),
+  version INTEGER NOT NULL CHECK(version > 0),
+  updated_at TEXT NOT NULL
+);
+
+-- table: guests
+CREATE TABLE guests (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  permissions TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0)
+);
+
+-- table: guest_sessions
+CREATE TABLE guest_sessions (
+  login_session_id TEXT PRIMARY KEY NOT NULL REFERENCES login_sessions(id),
+  guest_id TEXT NOT NULL REFERENCES guests(id)
+);
+
+-- table: guest_uploads
+CREATE TABLE guest_uploads (
+  upload_id TEXT PRIMARY KEY NOT NULL REFERENCES upload_tasks(id),
+  guest_id TEXT NOT NULL REFERENCES guests(id)
+);
+
 -- index: login_owner
 CREATE INDEX login_owner ON login_sessions(owner_id);
 
@@ -411,6 +445,15 @@ CREATE INDEX email_verification_owner ON email_verification_challenges(owner_id,
 -- index: email_verification_ip
 CREATE INDEX email_verification_ip ON email_verification_challenges(ip_hash,created_at);
 
+-- index: guests_owner
+CREATE INDEX guests_owner ON guests(owner_id);
+
+-- index: guest_sessions_guest
+CREATE INDEX guest_sessions_guest ON guest_sessions(guest_id);
+
+-- index: guest_uploads_guest
+CREATE INDEX guest_uploads_guest ON guest_uploads(guest_id);
+
 -- trigger: stage2_default_category_not_archived
 CREATE TRIGGER stage2_default_category_not_archived
 BEFORE UPDATE OF archived_at ON categories
@@ -459,13 +502,15 @@ BEGIN SELECT RAISE(ABORT,'verified email required'); END;
 INSERT INTO smtp_provider_types(code,name,email_domain,smtp_host,enabled) VALUES('163','163 邮箱','163.com','smtp.163.com',1);
 INSERT INTO smtp_provider_types(code,name,email_domain,smtp_host,enabled) VALUES('qq','QQ 邮箱','qq.com','smtp.qq.com',1);
 
--- 对应 0001～0006 的结构来源校验；应用会核对版本、顺序和 SHA-256。
+-- 对应 0001～0008 的结构来源校验；应用会核对版本、顺序和 SHA-256。
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(1,'b2f9606329c23ed3b94d175842450f50989f4eada73c0d5b1f4602d7d5e7a92e',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(2,'ed502f9ad6854fc43178fc5ec37d65476bdb0475d151adbdd2a36c0bf42e151a',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(3,'6aa89f44a7c995d5aa2694bf24b8482b5ae68e928c44b4fa21ce99998625b0fc',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(4,'fba00211ebf42250049a3e54dc061a54a986b883d80888b19123871edfa7f37b',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(5,'afc765ff5ccbdff15d229e7150d3a1786b3ea3c0f4e0f9551de3b64e74cc3e52',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(6,'d982b4876cfe735370e1c93efce7fb09e089b49e7b5ffceec8758b4da563dc55',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(7,'b5db48e45e1a5b980a3a1e0419e6a23bf4a2b9d0904d0692edfc80307bead524',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(8,'61f5d06a0df37caa3365c6e9e8608808a90b6d47dbd2c1cd02a5b85117f463d4',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 PRAGMA foreign_key_check;
 PRAGMA integrity_check;

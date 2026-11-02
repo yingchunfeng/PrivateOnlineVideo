@@ -13,7 +13,7 @@ interface SpaceMeteorContextValue {
   previewMode: MeteorPreviewMode | null;
   updateSettings: (next: SpaceEffectsSettings) => void;
   resetSettings: () => void;
-  preview: (mode: MeteorPreviewMode) => void;
+  preview: (mode: MeteorPreviewMode, settings?: SpaceEffectsSettings) => void;
   stopPreview: () => void;
   snapshot: MeteorSnapshot;
 }
@@ -45,6 +45,8 @@ export function SpaceMeteorProvider({ enabled, paused, children }: { enabled: bo
   const flags = useRef({ enabled, paused });
   flags.current = { enabled, paused };
   const drive = useRef<() => void>(() => undefined);
+  const saved = useRef({ settings, device }); saved.current = { settings, device };
+  const previewOverride = useRef<SpaceEffectsSettings | null>(null);
 
   useEffect(() => {
     const current = engine.current!;
@@ -60,7 +62,12 @@ export function SpaceMeteorProvider({ enabled, paused, children }: { enabled: bo
       document.documentElement.dataset.spaceMeteorBlocked = allowed ? "false" : "true";
       document.documentElement.dataset.spaceMeteorInput = input ? "true" : "false";
       current.setSafety({ allowed, input }, now);
-      const next = current.tick(now);
+      let next = current.tick(now);
+      if (previewOverride.current && !next.previewMode) {
+        previewOverride.current = null;
+        current.configure(saved.current.settings, saved.current.device, now, window.innerWidth, window.innerHeight);
+        next = current.tick(now);
+      }
       setSnapshot(next);
       if (Number.isFinite(next.nextAt)) timer = setTimeout(step, Math.max(16, next.nextAt - now));
     };
@@ -88,7 +95,7 @@ export function SpaceMeteorProvider({ enabled, paused, children }: { enabled: bo
   }, []);
 
   useLayoutEffect(() => {
-    engine.current!.configure(settings, device, performance.now(), window.innerWidth, window.innerHeight);
+    engine.current!.configure(previewOverride.current ?? settings, device, performance.now(), window.innerWidth, window.innerHeight);
     const root = document.documentElement;
     for (const [key, value] of Object.entries(settings.other)) root.setAttribute(`data-space-${key}`, value ? "on" : "off");
     drive.current();
@@ -111,8 +118,19 @@ export function SpaceMeteorProvider({ enabled, paused, children }: { enabled: bo
     try { window.localStorage.setItem(SPACE_EFFECTS_STORAGE_KEY, JSON.stringify(next)); setStorageAvailable(true); }
     catch { setStorageAvailable(false); }
   };
-  const preview = (mode: MeteorPreviewMode) => { drive.current(); engine.current!.preview(mode, performance.now()); drive.current(); };
-  const stopPreview = () => { engine.current!.stopPreview(performance.now()); drive.current(); };
+  const preview = (mode: MeteorPreviewMode, draft?: SpaceEffectsSettings) => {
+    drive.current();
+    if (draft) {
+      previewOverride.current = normalizeSpaceSettings(draft);
+      engine.current!.configure(previewOverride.current, device, performance.now(), window.innerWidth, window.innerHeight);
+    }
+    engine.current!.preview(mode, performance.now()); drive.current();
+  };
+  const stopPreview = () => {
+    engine.current!.stopPreview(performance.now());
+    if (previewOverride.current) { previewOverride.current = null; engine.current!.configure(settings, device, performance.now(), window.innerWidth, window.innerHeight); }
+    drive.current();
+  };
   return <SpaceMeteorContext.Provider value={{ settings, effective: effectiveSpaceSettings(settings, device), device, storageAvailable, previewMode: snapshot.previewMode, updateSettings, resetSettings: () => updateSettings(normalizeSpaceSettings(null)), preview, stopPreview, snapshot }}>{children}</SpaceMeteorContext.Provider>;
 }
 

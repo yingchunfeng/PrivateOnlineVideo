@@ -7,11 +7,13 @@ import { chromium, expect } from "@playwright/test";
 import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import type { UploadTask } from "@online-video/shared";
+import { fixtureSiteSettings, openSpaceSettings, selectPersonalTheme, setSpaceEnabled } from "./page-settings-helpers";
 
 const evidence = fileURLToPath(new URL(`../../../.local/acceptance/space-enhancements-${randomUUID()}/`, import.meta.url));
 
 test("remaining space effects: single confirmations, navigation continuity and one entrance per route", { timeout: 90000 }, async t => {
-  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0 } });
+  // 固定本轮测试代码快照，避免共享构建产物重写触发上下文模块的热替换。
+  const server = await createServer({ configFile: false, root: fileURLToPath(new URL("..", import.meta.url)), cacheDir: `${evidence}/vite-cache`, mode: "test", plugins: [react()], server: { host: "127.0.0.1", port: 0, watch: null, hmr: false } });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   try {
     await server.listen();
@@ -43,6 +45,7 @@ test("remaining space effects: single confirmations, navigation continuity and o
         case "/api/auth/me": return ok({ user: { id: "enhancement-owner", displayName: "隔离动效验收", totpEnabled: false, authMethod: "password", authVersion: 1, emailMasked: null, emailVerified: false }, csrfToken: "fixture" });
         case "/api/library": return ok({ mediaBaseUrl: "https://fixture.invalid", objectPrefix: "media/", categories: [{ id: "space", name: "星际", tags: [] }] });
         case "/api/settings/limits": return ok({ maxUploadBytes: 2147483648, partSizeBytes: 65536, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
+        case "/api/settings/site": return ok(fixtureSiteSettings);
         case "/api/videos": return ok({ items: [{ id: "fixture-video", title: `首屏模块 ${url.searchParams.get("page") ?? "1"}`, categoryId: "space", tags: [], publicUrl: "https://fixture.invalid/media/test.mp4", coverUrl: null, fileName: "fixture.mp4", sizeBytes: 4, durationSeconds: 12, status: "ready", playable: true, createdAt: "2026-10-28T00:00:00.000Z" }], total: 24, page: Number(url.searchParams.get("page") ?? "1"), pageSize: 12 });
         case "/api/uploads": return ok({ items: [currentTask, oldTask], total: 2, page: 1, pageSize: 20 });
         case "/api/uploads/new-confirmation": return ok(currentTask);
@@ -78,7 +81,7 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await expect(page.locator(".space-nebula-blue")).toHaveCSS("animation-name", "none");
       await page.locator(".space-atmosphere").evaluate(node => { (node as HTMLElement).dataset.fixtureIdentity = "stable-background"; });
       for (const theme of ["light", "dark"]) {
-        await page.getByRole("button", { name: theme === "light" ? "浅色" : "深色", exact: true }).click();
+        await selectPersonalTheme(page, theme);
         await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition).forEach(animation => animation.finish()));
         await page.screenshot({ path: `${evidence}/nebula-navigation-${theme}.png`, animations: "allow" });
       }
@@ -89,8 +92,9 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await expect.poll(async () => (await entrances()).length).toBe(2);
       const original = await entrances();
       assert.deepEqual(original.sort(), ["heading", "module"]);
-      await page.getByRole("searchbox").fill("首屏");
       await page.getByRole("button", { name: "搜索", exact: true }).click();
+      await page.getByRole("searchbox").fill("首屏");
+      await page.getByRole("button", { name: "应用搜索", exact: true }).click();
       await expect(page.locator(".loading")).toHaveCount(0);
       await page.getByRole("button", { name: "下一页", exact: true }).click();
       await expect(page.locator(".pagination")).toContainText("第 2");
@@ -118,7 +122,8 @@ test("remaining space effects: single confirmations, navigation continuity and o
         const box = node.getBoundingClientRect();
         return Math.abs(box.top + box.height / 2 - current.top - current.height / 2);
       })).toBeLessThan(1);
-      assert.equal(await menu.getByRole("link").count(), 6);
+      assert.equal(await menu.getByRole("link").count(), 8);
+      await expect(menu.getByRole("link", { name: "访客管理", exact: true })).toHaveAttribute("href", "/guests");
       await expect(page.locator(".space-atmosphere")).toHaveAttribute("data-fixture-identity", "stable-background");
     });
 
@@ -128,7 +133,7 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await page.getByRole("button", { name: "重试完成确认", exact: true }).click();
       await expect.poll(() => confirmationRequested).toBe(true);
       await expect(page.locator(".task-completion-halo")).toHaveCount(0);
-      await page.getByRole("button", { name: "浅色", exact: true }).click();
+      await selectPersonalTheme(page, "light");
       releaseConfirmation();
       const halo = page.locator('[data-task-id="new-confirmation"] .task-completion-halo');
       await expect(halo).toHaveCount(1);
@@ -136,7 +141,7 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await halo.evaluate(node => { const animation = node.getAnimations()[0]; if (animation) { animation.pause(); animation.currentTime = 250; } });
       await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition).forEach(animation => animation.finish()));
       await page.screenshot({ path: `${evidence}/completion-halo-light.png`, animations: "allow" });
-      await page.getByRole("button", { name: "深色", exact: true }).click();
+      await selectPersonalTheme(page, "dark");
       await page.evaluate(() => document.getAnimations().filter(animation => animation instanceof CSSTransition).forEach(animation => animation.finish()));
       await page.screenshot({ path: `${evidence}/completion-halo-dark.png`, animations: "allow" });
       await expect(halo).toHaveCount(0);
@@ -150,19 +155,23 @@ test("remaining space effects: single confirmations, navigation continuity and o
     });
 
     await t.test("individual switches, global static and reduced-motion keep selection accurate without animation", async () => {
-      await page.getByRole("button", { name: "星空动效设置", exact: true }).click();
+      await openSpaceSettings(page);
       await page.getByRole("tab", { name: "其他动效", exact: true }).click();
       await page.getByRole("checkbox", { name: /^星云慢漂移/ }).uncheck();
       await page.getByRole("checkbox", { name: /^导航轨道指示/ }).uncheck();
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
       await expect(page.locator(".space-nebula-violet")).toHaveCSS("animation-name", "none");
       await expect(page.locator(".side-nav-orbit")).toHaveCSS("transition-duration", "0s");
+      await openSpaceSettings(page);
+      await page.getByRole("tab", { name: "其他动效", exact: true }).click();
       await page.getByRole("checkbox", { name: /^星云慢漂移/ }).check();
       await page.getByRole("checkbox", { name: /^导航轨道指示/ }).check();
-      await page.getByRole("button", { name: "关闭星空设置", exact: true }).click();
-      await page.getByRole("button", { name: "动态星空", exact: true }).click();
+      await page.getByRole("button", { name: "保存星空设置", exact: true }).click();
+      await setSpaceEnabled(page, false);
       await expect(page.locator(".space-nebula-violet")).toHaveCSS("animation-name", "none");
       await expect(page.locator(".side-nav-orbit")).toHaveCSS("transition-duration", "0s");
-      await page.getByRole("button", { name: "动态星空", exact: true }).click();
+      await setSpaceEnabled(page, true);
+      await page.getByRole("navigation", { name: "系统主菜单" }).getByRole("link", { name: "任务列表", exact: true }).click();
       await page.emulateMedia({ reducedMotion: "reduce" });
       await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off");
       await expect(page.locator(".space-nebula-violet")).toHaveCSS("animation-name", "none");
