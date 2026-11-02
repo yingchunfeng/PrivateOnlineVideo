@@ -6,17 +6,14 @@ import { isSiteApiPath } from "../api/client";
 import { bytes, duration, videoDuration, Empty, ErrorNotice, Icon, Loading, useLoad } from "../ui";
 import { defaultCategory, loadOrganizations, MultiChoice, OrganizationBadges, OrganizationFields } from "../organization";
 import type { Organizations } from "../organization";
-import { loadLibrary, notifyLibraryChanged, TagBadges, TagChoice, useLibraryRevision } from "../library";
+import { loadLibrary, TagBadges, TagChoice, useLibraryRevision } from "../library";
 import { libraryTags, libraryVideoPath, parseTagFilter, publicMediaUrl } from "../library-data";
 import type { PublicMediaPolicy } from "../library-data";
 import "./library-actions.css";
 import { OrbitIllustration } from "../space-console";
-import { VideoEditorDialog } from "../video-editor";
 import { VIDEO_DURATION_SAVED } from "../media-duration";
-import { useAuth } from "../auth";
 
-function LibraryVideoCard({ video, categoryName, library, onEdit }: { video: VideoSummary; categoryName: string; library: PublicMediaPolicy | undefined; onEdit: () => void }) {
-  const auth = useAuth();
+function LibraryVideoCard({ video, categoryName, library }: { video: VideoSummary; categoryName: string; library: PublicMediaPolicy | undefined }) {
   const path = `/videos/${encodeURIComponent(video.id)}`;
   return <article className="video-card">
     <Link className="video-card-preview" to={path} aria-label={`播放 ${video.title}`}><Thumbnail video={video} library={library} /></Link>
@@ -25,7 +22,6 @@ function LibraryVideoCard({ video, categoryName, library, onEdit }: { video: Vid
       <h2 className="library-card-title"><Link className="video-card-title-link" to={path} title={video.title}>{video.title}</Link></h2>
       <div className="library-card-tags"><TagBadges tags={video.tags?.slice(0, 2) ?? []} />{video.tags && video.tags.length > 2 && <span className="library-tag-overflow" title={video.tags.join("、")} aria-label={`另有 ${video.tags.length - 2} 个标签`}>+{video.tags.length - 2}</span>}</div>
       <div className="card-meta library-card-size"><span>{bytes(video.sizeBytes)}</span></div>
-      <div className="video-card-actions"><Link className="button secondary" to={path}><Icon name="play" />播放</Link>{(auth.can("video_edit") || auth.can("video_delete")) && <button className="button secondary" onClick={onEdit}><Icon name="settings" />{auth.can("video_edit") ? "编辑" : "管理记录"}</button>}</div>
     </div>
   </article>;
 }
@@ -56,7 +52,6 @@ export function Thumbnail({ video, library }: { video: VideoSummary; library?: P
   );
 }
 export function LibraryPage() {
-  const [editingVideoId, setEditingVideoId] = useState<string>();
   const libraryRevision = useLibraryRevision();
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? ""; const categoryId = params.get("categoryId") ?? "";
@@ -83,8 +78,7 @@ export function LibraryPage() {
     {showSearch && <form id="library-search" className="search-row library-search-panel" onSubmit={event => { event.preventDefault(); filter({ q: draft.trim() }); }}><label className="search-label">搜索标题或标签<input ref={searchInput} type="search" placeholder="找一个想重温的片刻" value={draft} maxLength={200} onChange={event => setDraft(event.target.value)} /></label><button className="secondary" type="submit">应用搜索</button>{(q || draft) && <button className="secondary" type="button" onClick={() => { setDraft(""); filter({ q: "" }); }}>清空搜索</button>}</form>}
     {showFilterDrawer && list.data && <section id="library-filter" className="library-filter-panel"><div className="filter-drawer-header"><div className="filter-drawer-title"><strong>标签筛选</strong><small>需同时命中所选项</small></div>{activeFilterCount > 0 && <button type="button" className="secondary" onClick={() => filter({ tags: "" })}>清空已选</button>}</div><TagChoice items={libraryTags(list.data.categories, categoryId)} selected={selectedTags} onChange={tags => filter({ tags: tags.length ? JSON.stringify(tags) : "" })} filtering /></section>}
     <div className="list-bar library-result-bar"><small>{list.data ? `${list.data.videos.total} 个视频` : "私人空间"}{q ? ` · 标题或标签包含“${q}”` : ""}{activeFilterCount > 0 ? ` · ${activeFilterCount} 个标签条件` : ""}</small>{(q || tagFilter) && <button className="secondary" onClick={() => { setDraft(""); filter({ q: "", tags: "" }); }}>清空搜索与标签</button>}</div>
-    {list.busy ? <Loading /> : list.error ? <ErrorNotice error={list.error} retry={list.reload} /> : list.data && <>{list.data.videos.items.length === 0 ? <Empty title={q || categoryId || tagFilter ? "没有找到匹配的视频" : "这里还没有视频"}>{q || categoryId || tagFilter ? "试试其他标题、分类或标签。所选标签须全部命中。" : "请在上传页上传手机视频，或导入已有公开视频。"}</Empty> : <div className="video-grid">{list.data.videos.items.map(video => <LibraryVideoCard key={video.id} video={video} library={list.data} categoryName={list.data?.categories.find(category => category.id === video.categoryId)?.name ?? "未分类"} onEdit={() => setEditingVideoId(video.id)} />)}</div>}<div className="pagination" aria-label="分页"><button className="secondary" disabled={page <= 1} onClick={() => filter({ page: String(page - 1) })}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(list.data.videos.total / list.data.videos.pageSize))} 页</span><button className="secondary" disabled={page * list.data.videos.pageSize >= list.data.videos.total} onClick={() => filter({ page: String(page + 1) })}>下一页</button></div></>}
-    {editingVideoId && list.data && <VideoEditorDialog videoId={editingVideoId} library={list.data} onClose={() => setEditingVideoId(undefined)} onSaved={() => { setEditingVideoId(undefined); notifyLibraryChanged(); }} onDeleted={list.reload} />}
+    {list.busy ? <Loading /> : list.error ? <ErrorNotice error={list.error} retry={list.reload} /> : list.data && <>{list.data.videos.items.length === 0 ? <Empty title={q || categoryId || tagFilter ? "没有找到匹配的视频" : "这里还没有视频"}>{q || categoryId || tagFilter ? "试试其他标题、分类或标签。所选标签须全部命中。" : "请在上传页上传手机视频，或导入已有公开视频。"}</Empty> : <div className="video-grid">{list.data.videos.items.map(video => <LibraryVideoCard key={video.id} video={video} library={list.data} categoryName={list.data?.categories.find(category => category.id === video.categoryId)?.name ?? "未分类"} />)}</div>}<div className="pagination" aria-label="分页"><button className="secondary" disabled={page <= 1} onClick={() => filter({ page: String(page - 1) })}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(list.data.videos.total / list.data.videos.pageSize))} 页</span><button className="secondary" disabled={page * list.data.videos.pageSize >= list.data.videos.total} onClick={() => filter({ page: String(page + 1) })}>下一页</button></div></>}
   </div>;
 }
 
