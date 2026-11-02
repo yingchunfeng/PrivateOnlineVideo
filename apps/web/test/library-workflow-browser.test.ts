@@ -138,12 +138,13 @@ test("分类标签CRUD同步首页、播放旁编辑分类标签后筛选命中"
     await expect.poll(() => fixture.config().tags.find(tag => tag.id === addedTag.id)?.name).toBe("复习");
     await page.locator(".side-nav-menu").getByRole("link", { name: "首页库", exact: true }).click(); await expect(page.getByRole("button", { name: "学习", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "学习", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(0);
-    await page.getByRole("button", { name: "全部视频", exact: true }).click(); await page.locator(".video-card").getByRole("button", { name: "编辑", exact: true }).click();
+    await page.getByRole("button", { name: "全部视频", exact: true }).click(); await page.locator(".video-card").first().locator(".video-card-preview").click();
+    await page.getByRole("button", { name: "编辑信息", exact: true }).click();
     await expect(page.getByLabel("视频分类", { exact: true })).toBeVisible();
     const oldObjects = fixture.videos.map(({ publicUrl, objectKey, coverUrl, coverObjectKey }) => ({ publicUrl, objectKey, coverUrl, coverObjectKey }));
     await page.getByLabel("视频分类", { exact: true }).selectOption(addedId); await page.getByLabel("复习", { exact: true }).check(); await page.getByRole("button", { name: "保存视频信息", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "编辑视频信息", exact: true })).toHaveCount(0); assert.equal(new URL(page.url()).pathname, "/");
-    await expect(page.locator(".video-card")).toContainText("学习"); await expect(page.locator(".video-card")).toContainText("复习"); assert.equal(fixture.edits.at(-1)?.categoryId, addedId);
+    await expect(page.getByRole("dialog", { name: "编辑视频信息", exact: true })).toHaveCount(0); assert.ok(/\/videos\//.test(new URL(page.url()).pathname));
+    await page.goto(origin); await expect(page.locator(".video-card").first()).toContainText("学习"); await expect(page.locator(".video-card").first()).toContainText("复习"); assert.equal(fixture.edits.at(-1)?.categoryId, addedId);
     assert.deepEqual(fixture.videos.map(({ publicUrl, objectKey, coverUrl, coverObjectKey }) => ({ publicUrl, objectKey, coverUrl, coverObjectKey })), oldObjects);
     await page.screenshot({ path: join(evidenceRoot, "video-edited.png"), fullPage: true });
     await page.goto(origin); await page.getByRole("button", { name: "学习", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(1);

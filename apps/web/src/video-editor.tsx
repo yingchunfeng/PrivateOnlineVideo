@@ -10,6 +10,34 @@ import { useUploadQueue } from "./upload-context";
 import { useAuth } from "./auth";
 import "./pages/video-editor.css";
 
+const COVER_MAX_BYTES = 2 * 1024 * 1024;
+const COVER_MAX_EDGE = 960;
+
+/** 服务端只接收长边 960 内、2 MiB 的 JPEG；其它格式或超限时用 canvas 重编码，符合"浏览器重编码 JPEG"的原设计。 */
+async function normalizeCoverFile(file: File): Promise<File> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("这张图片无法读取，请换一张 JPG 或 PNG 图片")); img.src = url; });
+    const longest = Math.max(img.naturalWidth, img.naturalHeight);
+    if (!longest) throw new Error("图片尺寸无效，请换一张图片");
+    if (file.type === "image/jpeg" && file.size <= COVER_MAX_BYTES && longest <= COVER_MAX_EDGE) return file;
+    const scale = Math.min(1, COVER_MAX_EDGE / longest);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("当前浏览器不支持图片压缩，请使用长边不超过 960 像素的 JPEG 图片");
+    // PNG 等带透明通道的图片转 JPEG 前先铺白底，避免透明区域变成黑块。
+    context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob || blob.size <= 0) throw new Error("封面转换失败，请换一张图片");
+    if (blob.size > COVER_MAX_BYTES) throw new Error("封面转换后仍超过 2 MiB，请换一张内容更简单的图片");
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "cover"}.jpg`, { type: "image/jpeg" });
+  } finally { URL.revokeObjectURL(url); }
+}
+
 export function VideoEditorDialog({ videoId, library, onClose, onSaved, onDeleted }: {
   videoId: string; library: LibraryConfig; onClose: () => void; onSaved: (video: VideoDetail) => void; onDeleted: () => void;
 }) {
@@ -53,10 +81,10 @@ function VideoEditorForm({ video, library, onClose, onSaved, onDeleted }: {
       </select></label></div>
       <TagChoice items={availableTags} selected={tags} onChange={setTags} disabled={busy} />
       <small>切换分类时仅保留该分类可用的标签；历史标签可保留或取消。</small>
-      <div className="video-editor-cover">{(coverPreview || existingCover) && <img src={coverPreview ?? existingCover} alt="待保存视频封面" />}<div className="stack"><label>替换封面（JPEG，最大 2 MiB）<input type="file" accept="image/jpeg,.jpg,.jpeg" disabled={busy} onChange={event => {
+      <div className="video-editor-cover">{(coverPreview || existingCover) && <img src={coverPreview ?? existingCover} alt="待保存视频封面" />}<div className="stack"><label>替换封面（JPG/PNG 等图片，自动转为 960px 内 JPEG；最大 2 MiB）<input type="file" accept="image/*" disabled={busy} onChange={event => {
         const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
-        if (file.type !== "image/jpeg" || file.size <= 0 || file.size > 2097152) { setError(new Error("封面必须为不超过 2 MiB 的 JPEG 图片，原封面已保留")); return; }
-        setCover(file); setError(undefined);
+        if (!file.type.startsWith("image/") || file.size <= 0) { setError(new Error("请选择 JPG、PNG 等图片文件作为封面，原封面已保留")); return; }
+        normalizeCoverFile(file).then(normalized => { setCover(normalized); setError(undefined); }).catch(err => setError(err));
       }} /></label>{cover && <><small>{cover.name}，保存后才替换数据库封面引用。</small><button className="secondary" type="button" disabled={busy} onClick={() => setCover(undefined)}>取消本次封面替换</button></>}</div></div>
       </fieldset>
       {notice && <div className="notice" role="status">{notice}</div>}{error !== undefined && <ErrorNotice error={error} />}

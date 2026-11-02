@@ -38,16 +38,23 @@
 .library-page .card-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-page .card-meta > span:last-child { flex-shrink: 0; }
 .library-page .library-card-size { justify-content: flex-end; }
+/* 无限滚动状态条（加载中/失败/到底）：桌面与移动端通用的基础样式，避免桌面端紧贴列表、无间距、不居中。 */
+.library-page .infinite-sentinel { min-height: 1px; }
+.library-page .infinite-status { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 24px 0 8px; font-size: .85rem; color: var(--text-secondary); }
+.library-page .infinite-status.error { color: var(--error); }
+.library-page .infinite-status.end { color: var(--text-secondary); }
+.library-page .infinite-status .spinner { width: 16px; height: 16px; }
 
 @media (max-width: 600px) {
   /* 手机端纵向双列卡片：高度随内容，两列不强求对齐（align-items: start 已生效）。 */
   .library-page { --library-card-width: 100%; }
   .library-page .station-heading h1 { font-size: 1.45rem; }
   .library-page .station-heading { margin-bottom: 16px; }
-  .library-toolbar { gap: 8px; }
-  .library-toolbar-actions { gap: 6px; }
-  .library-toolbar .category-tabs { gap: 6px; }
-  .library-toolbar .category-tabs button { min-height: 44px; max-width: 160px; padding: 6px 12px; font-size: .8rem; }
+  .library-toolbar { gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+  .library-toolbar-actions { gap: 6px; flex-shrink: 0; margin-left: auto; }
+  /* 手机端：分类标签由横向滚动改为自动换行，宽度不足时整齐折行、完整可读。 */
+  .library-toolbar .category-tabs { flex: 1 1 100%; flex-wrap: wrap; overflow: visible; gap: 6px; padding: 0; }
+  .library-toolbar .category-tabs button { min-height: 44px; max-width: none; flex-shrink: 1; min-width: 0; padding: 6px 12px; font-size: .8rem; }
   .library-search-panel { flex-wrap: wrap; gap: 8px; }
   .library-search-panel .search-label { flex-basis: 100%; }
   .library-search-panel input,
@@ -66,7 +73,6 @@
   .library-card-tags .organization-badges { gap: 3px; }
   .library-card-tags .badge { padding: 2px 5px; font-size: 10px; }
   .library-page .sci-card-hud-time { bottom: 5px; right: 5px; font-size: 10px; padding: 1px 4px; }
-  .library-page .pagination { gap: 8px; font-size: .8rem; }
 }
 
 @media (max-width: 359px) {

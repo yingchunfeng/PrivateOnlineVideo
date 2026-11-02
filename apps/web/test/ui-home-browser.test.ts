@@ -61,7 +61,7 @@ async function noOverflow(page: Page) {
   assert.ok(geometry.scroll <= geometry.width, `整页横向溢出: ${JSON.stringify(geometry)}`);
 }
 
-test("首页固定卡片、访客有效期及上传页导入在浅深色和窄屏下对齐可用", { timeout: 180000 }, async t => {
+test("首页自适应卡片、访客有效期及上传页导入在浅深色和窄屏下可用", { timeout: 180000 }, async t => {
   await mkdir(evidenceRoot, { recursive: true });
   const root = fileURLToPath(new URL("..", import.meta.url));
   const server = await createServer({ root, cacheDir: join(evidenceRoot, "vite-cache"), mode: "development", plugins: [{ name: "isolate-home-api", configureServer(server) { server.middlewares.use((request, response, next) => { if (!request.url?.startsWith("/api/")) return next(); response.statusCode = 503; response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ error: { code: "SERVICE_NOT_CONFIGURED" } })); }); } }], server: { host: "127.0.0.1", port: 0, strictPort: false } });
@@ -86,21 +86,30 @@ test("首页固定卡片、访客有效期及上传页导入在浅深色和窄�
         await noOverflow(page);
         const cards = await page.locator(".video-card").evaluateAll(nodes => nodes.map(node => {
           const bounds = node.getBoundingClientRect(); const title = node.querySelector("h2")!; const cover = node.querySelector(".thumbnail-wrapper")!.getBoundingClientRect(); const css = getComputedStyle(title); const body = node.querySelector(".card-body")!;
-          return { width: bounds.width, height: bounds.height, offsets: ["h2", ".library-card-tags", ".library-card-size", ".video-card-actions"].map(selector => node.querySelector(selector)!.getBoundingClientRect().top - bounds.top), titleHeight: title.getBoundingClientRect().height, font: Number.parseFloat(css.fontSize), line: Number.parseFloat(css.lineHeight), aspect: cover.width / cover.height, tags: node.querySelectorAll(".badge").length, contentOverflow: body.scrollHeight - body.clientHeight, actionsOverflow: node.querySelector(".video-card-actions")!.getBoundingClientRect().bottom - bounds.bottom };
+          return { width: bounds.width, height: bounds.height, titleHeight: title.getBoundingClientRect().height, font: Number.parseFloat(css.fontSize), line: Number.parseFloat(css.lineHeight), aspect: cover.width / cover.height, tags: node.querySelectorAll(".badge").length, contentOverflow: body.scrollHeight - body.clientHeight, hasActions: !!node.querySelector(".video-card-actions") };
         }));
-        const compact = view.width >= 360 && view.width <= 600;
+        const compact = view.width <= 600;
         for (const card of cards) {
-          assert.equal(card.width, compact ? 160 : 280); assert.equal(card.height, compact ? 260 : 320);
+          assert.equal(card.hasActions, false, "卡片不应再有操作按钮，点击卡片直接进入详情");
           assert.ok(Math.abs(card.aspect - 16 / 9) < .02); assert.ok(card.titleHeight <= card.line + 1); assert.ok(card.tags <= 2);
-          assert.ok(card.contentOverflow <= 1, "紧凑卡片内容不得溢出"); assert.ok(card.actionsOverflow <= 0, "紧凑卡片操作按钮不得被裁切");
-          card.offsets.forEach((offset, index) => assert.ok(Math.abs(offset - cards[0]!.offsets[index]!) < 1, `卡片内部第 ${index + 1} 行未对齐`));
-          if (view.width <= 600) assert.ok(card.font >= 13 && card.font <= 14);
+          assert.ok(card.contentOverflow <= 1, "卡片内容不得溢出");
+          if (compact) assert.ok(card.font >= 13 && card.font <= 14);
+        }
+        if (compact) {
+          const columns = await page.locator(".library-page .video-grid").evaluate(node => getComputedStyle(node).gridTemplateColumns.split(" ").length);
+          assert.equal(columns, 2, "窄屏应为双列网格");
+          assert.equal(new Set(cards.map(card => card.width)).size, 1, "同网格卡片宽度一致");
+          assert.ok(new Set(cards.map(card => card.height)).size >= 1);
+        } else {
+          assert.equal(new Set(cards.map(card => card.width)).size, 1, "桌面卡片宽度一致");
         }
         await expect(page.locator(".library-page .state-text")).toHaveCount(0);
         for (const status of ["处理中", "处理失败", "格式不支持", "可播放"]) await expect(page.locator(".video-card").getByText(status, { exact: true })).toHaveCount(0);
         await expect(page.locator(".video-card-title-link").first()).toHaveAttribute("title", data.videos[0]!.title);
         await page.screenshot({ path: join(evidenceRoot, `home-${view.width}-${view.theme}.png`), fullPage: false });
-        await page.getByRole("button", { name: "下一页", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(2);
+        await page.locator(".infinite-sentinel").scrollIntoViewIfNeeded();
+        await expect(page.locator(".video-card")).toHaveCount(14);
+        await expect(page.getByText("已经到底了", { exact: false })).toBeVisible();
         await search.focus(); await page.keyboard.press("Enter"); await expect(page.getByRole("searchbox")).toBeFocused(); await page.getByRole("searchbox").fill("独特片段"); await page.getByRole("button", { name: "应用搜索", exact: true }).click();
         await expect(page.locator(".video-card")).toHaveCount(1); assert.equal(new URL(page.url()).searchParams.has("page"), false);
         const singleCard = await page.locator(".video-card").boundingBox(); assert.equal(singleCard?.width, cards[0]!.width); assert.equal(singleCard?.height, cards[0]!.height);

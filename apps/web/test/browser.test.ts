@@ -47,11 +47,13 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
     });
     await t.test("库筛选、分页、分类创建重命名、元数据编辑与选择性导入", async () => {
       await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
-      await page.getByRole("button", { name: "下一页", exact: true }).click();
-      await expect(page).toHaveURL(/page=2/);
+      const beforeScroll = await page.locator(".video-card").count();
+      await page.locator(".infinite-sentinel").scrollIntoViewIfNeeded();
+      await expect(page.locator(".video-card").count()).toBeGreaterThan(beforeScroll);
+      expect(page.url()).not.toContain("page=");
       await page.getByRole("button", { name: "旅行", exact: true }).click();
       await expect(page).toHaveURL(/categoryId=cat-travel/);
-      expect(page.url()).not.toContain("page=2");
+      expect(page.url()).not.toContain("page=");
       await page.getByLabel("搜索标题").fill("不存在的标题"); await page.getByRole("button", { name: "搜索", exact: true }).click();
       await expect(page.getByRole("heading", { name: "没有找到匹配的视频" })).toBeVisible();
       await page.getByLabel("搜索标题").fill(""); await page.getByRole("button", { name: "搜索", exact: true }).click();

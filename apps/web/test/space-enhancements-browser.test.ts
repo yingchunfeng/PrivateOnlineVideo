@@ -96,8 +96,9 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await page.getByRole("searchbox").fill("首屏");
       await page.getByRole("button", { name: "应用搜索", exact: true }).click();
       await expect(page.locator(".loading")).toHaveCount(0);
-      await page.getByRole("button", { name: "下一页", exact: true }).click();
-      await expect(page.locator(".pagination")).toContainText("第 2");
+      const beforeScroll = await page.locator(".video-card").count();
+      await page.locator(".infinite-sentinel").scrollIntoViewIfNeeded();
+      await expect(page.locator(".video-card").count()).toBeGreaterThan(beforeScroll);
       await expect(page.locator(".video-grid")).toBeVisible();
       assert.deepEqual(await entrances(), original);
       await expect(page.locator(".space-enter-heading, .space-enter-module")).toHaveCount(0);

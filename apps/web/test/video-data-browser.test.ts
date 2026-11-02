@@ -73,11 +73,12 @@ test("视频数据闭环：真实可解码样例、新上传/公共登记/历史
   const durationRow = (id: string) => database.client.prepare("SELECT duration_seconds duration FROM videos WHERE id=?").get(id) as { duration: number | null };
 
   await page.goto(origin); await expect(page.locator(".video-card")).toHaveCount(2); assert.deepEqual(mediaReads, [], "首页不能加载所有视频采集时长");
-  const historyCard = page.locator(".video-card").filter({ hasText: "历史缺失时长" });
-  await historyCard.getByRole("button", { name: "编辑", exact: true }).click(); const dialog = page.getByRole("dialog", { name: "编辑视频信息", exact: true });
-  await expect(dialog.getByLabel("视频标题", { exact: true })).toHaveValue(history.title); assert.equal(new URL(page.url()).pathname, "/"); assert.deepEqual(mediaReads, []);
+  failDuration = true; // 提前打开详情页会触发时长采集，先保持"历史缺失时长"的未采集状态供后续用例使用
+  const dialog = page.getByRole("dialog", { name: "编辑视频信息", exact: true });
+  await page.goto(`${origin}/videos/${history.id}`); await page.getByRole("button", { name: "编辑信息", exact: true }).click();
+  await expect(dialog.getByLabel("视频标题", { exact: true })).toHaveValue(history.title);
   const beforeCancel = mutations.length; await dialog.getByLabel("视频标题", { exact: true }).fill("取消不保存"); await dialog.getByRole("button", { name: "取消", exact: true }).click(); assert.equal(mutations.length, beforeCancel);
-  await historyCard.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "编辑信息", exact: true }).click();
   await dialog.getByLabel("视频标题", { exact: true }).fill("保留失败草稿"); failSave = true; await dialog.getByRole("button", { name: "保存视频信息", exact: true }).click(); await expect(dialog.getByRole("alert")).toBeVisible(); await expect(dialog.getByLabel("视频标题", { exact: true })).toHaveValue("保留失败草稿"); failSave = false;
   for (const [theme, width, height] of [["light", 1440, 900], ["dark", 1440, 900], ["light", 375, 812], ["dark", 320, 640], ["light", 768, 900]] as const) {
     await page.setViewportSize({ width, height }); await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
@@ -114,14 +115,22 @@ test("视频数据闭环：真实可解码样例、新上传/公共登记/历史
   assert.ok(Math.abs(durationRow(uploaded.id).duration! - actual) < .001); assert.ok(Math.abs(durationRow(history.id).duration! - actual) < .001);
   loggedIn = false; await page.goto(origin); await expect(page).toHaveURL(/\/login$/); await page.getByLabel("密码", { exact: true }).fill("isolated-test-password"); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.locator(".video-card").filter({ hasText: "新上传真实时长" }).locator(".sci-card-hud-time")).toBeVisible();
 
-  await page.locator(".video-card").filter({ hasText: "新上传真实时长" }).getByRole("button", { name: "编辑", exact: true }).click(); await expect(dialog).toBeVisible();
+  await page.goto(`${origin}/videos/${uploaded.id}`); await page.getByRole("button", { name: "编辑信息", exact: true }).click(); await expect(dialog).toBeVisible();
   const originalCover = (await createRepositories(database, () => new Date(at), config.library).videos.findOwned("owner", uploaded.id))!.video.coverObjectKey;
-  const jpeg = Buffer.from(await page.evaluate(async () => { const canvas = document.createElement("canvas"); canvas.width = 16; canvas.height = 16; const context = canvas.getContext("2d")!; context.fillStyle = "#228855"; context.fillRect(0, 0, 16, 16); const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg")); return [...new Uint8Array(await blob.arrayBuffer())]; }));
-  await dialog.getByLabel("替换封面（JPEG，最大 1 MiB）", { exact: true }).setInputFiles({ name: "replacement.jpg", mimeType: "image/jpeg", buffer: jpeg });
+  // 手机上常见的截图是 1600px 长边的 PNG：前端必须转成服务端允许的 960px 内 JPEG 才能保存成功。
+  const screenshot = Buffer.from(await page.evaluate(async () => { const canvas = document.createElement("canvas"); canvas.width = 1600; canvas.height = 1200; const context = canvas.getContext("2d")!; context.fillStyle = "#228855"; context.fillRect(0, 0, 1600, 1200); const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png")); return [...new Uint8Array(await blob.arrayBuffer())]; }));
+  await dialog.getByLabel(/替换封面/).setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: screenshot });
+  // 关掉系统文件选择框会让窗口重新获得焦点并触发配置刷新；此时编辑器不得被卸载重挂，
+  // 否则已选封面会丢失、保存时封面被静默跳过（表现为"保存后封面没变"）。
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(dialog).toBeVisible(); await expect(dialog).toContainText("replacement.jpg");
   failCover = true; await dialog.getByRole("button", { name: "保存视频信息", exact: true }).click(); await expect(dialog).toContainText("当前选择已保留"); await expect(dialog).toContainText("replacement.jpg"); failCover = false;
   await dialog.getByRole("button", { name: "保存视频信息", exact: true }).click(); await expect(dialog).toHaveCount(0);
+  const replacedCover = (await createRepositories(database, () => new Date(at), config.library).videos.findOwned("owner", uploaded.id))!.video.coverObjectKey;
+  assert.ok(replacedCover && replacedCover !== originalCover, "聚焦刷新后已选封面仍必须在保存时写库");
+  assert.ok(storage.objects.has(replacedCover), "新封面对象必须已上传");
   assert.ok(originalCover && storage.objects.has(originalCover), "替换封面不能顺手删除旧对象");
-  await page.locator(".video-card").filter({ hasText: "新上传真实时长" }).getByRole("button", { name: "编辑", exact: true }).click(); await expect(dialog).toBeVisible();
+  await page.getByRole("button", { name: "编辑信息", exact: true }).click(); await expect(dialog).toBeVisible();
   const objectCount = storage.objects.size; const deleteButton = dialog.getByRole("button", { name: "仅删除数据库记录", exact: true });
   await deleteButton.click(); await page.getByRole("alertdialog").getByRole("button", { name: "取消", exact: true }).click(); await expect(deleteButton).toBeFocused(); assert.ok(durationRow(uploaded.id));
   failDelete = true; await deleteButton.click(); await page.getByRole("alertdialog").getByRole("button", { name: "确认仅删除记录", exact: true }).click(); await expect(dialog.getByRole("alert")).toBeVisible(); assert.ok(durationRow(uploaded.id)); failDelete = false;

@@ -141,8 +141,8 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
           await selectPersonalTheme(page, theme);
           await assertWidth();
           if (width <= 375) {
-            await expect(page.locator(".video-card-actions .button").first()).toHaveCSS("white-space", "nowrap");
-            assert.equal(await page.locator(".video-card-actions .button").evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth)), true);
+            assert.equal(await page.locator(".video-card-actions").count(), 0, "窄屏卡片不再渲染操作按钮");
+            assert.equal(await page.locator(".library-page .video-grid").evaluate(node => getComputedStyle(node).gridTemplateColumns.split(" ").length), 2, "窄屏为双列网格");
           }
           if (width === 375) await page.screenshot({ path: `${evidence}/mobile-${theme}.png`, fullPage: true });
           await page.goto(`${origin}/upload`);

@@ -1,7 +1,7 @@
 import { decode } from "jpeg-js";
 import { HttpError } from "../../../core/errors.js";
 
-export const MAX_COVER_BYTES = 1024 * 1024;
+export const MAX_COVER_BYTES = 2 * 1024 * 1024;
 export const MAX_COVER_EDGE = 960;
 
 /** 首版只接收浏览器重编码的 JPEG；先限制尺寸，再实际解码，不能把伪装文件当作封面。 */

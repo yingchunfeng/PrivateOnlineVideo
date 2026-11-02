@@ -64,12 +64,14 @@ test("公共页面配置、上传/登记/编辑与原生播放器，不调用私
     try { await expect(page.locator(".category-tabs button")).toHaveText(["全部视频", "首类", "空类"]); }
     catch (error) { console.error("Fixture API paths:", paths, "Page:", await page.locator("body").innerText()); throw error; }
     await expect(page.locator(".video-card")).toHaveCount(12);
-    await page.getByRole("button", { name: "下一页", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(2);
+    await page.locator(".infinite-sentinel").scrollIntoViewIfNeeded();
+    await expect(page.locator(".video-card")).toHaveCount(14);
+    await expect(page.getByText("已经到底了", { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "空类", exact: true }).click(); await expect(page.getByRole("heading", { name: "没有找到匹配的视频" })).toBeVisible();
     await page.getByRole("button", { name: "全部视频", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(12); await page.getByRole("button", { name: "筛选", exact: true }).click();
     await page.getByRole("checkbox", { name: "旅行", exact: true }).check(); await page.getByRole("checkbox", { name: "逗号,标签", exact: true }).check();
     await expect.poll(() => tagQueries.some(tags => tags.includes("逗号,标签") && tags.includes("旅行"))).toBe(true);
-    await page.locator(".video-card").first().getByRole("link", { name: "播放", exact: true }).click();
+    await page.locator(".video-card").first().locator(".video-card-preview").click();
     const video = page.locator("video"); await expect(video).toHaveAttribute("src", /https:\/\/oss\.meetdawn\.top\/onlineVideo\//);
     await expect.poll(() => video.evaluate(node => (node as HTMLVideoElement).readyState)).toBeGreaterThan(0);
     await video.evaluate(async node => { const media = node as HTMLVideoElement; await media.play(); media.currentTime = 2; media.pause(); });
