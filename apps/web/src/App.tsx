@@ -63,7 +63,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
             <div className="side-nav-group-label">控制中心</div>
             {auth.can("library") && <NavLink to="/" end className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="home" />
-              <span>首页库</span>
+              <span>高光时刻</span>
             </NavLink>}
             {auth.can("upload") && <NavLink to="/upload" className={({ isActive }) => `side-nav-item ${isActive ? "active" : ""}`}>
               <Icon name="upload" />
@@ -145,7 +145,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
                 }}
               >
                 {[
-                  ["normal", "正常"], ["empty", "空视频库"], ["long", "长标题"], ["offline", "网络中断"],
+                  ["normal", "正常"], ["empty", "空高光时刻"], ["long", "长标题"], ["offline", "网络中断"],
                   ["expired", "会话过期"], ["limit", "流量已达上限"], ["unconfigured", "限额未配置"],
                   ["unlimited", "显式不限额"], ["storage", "存储不可用"], ["unknownUsage", "未知统计来源"],
                   ["usageUnavailable", "用量不可用"], ["completeFailure", "完成失败一次"],
@@ -173,7 +173,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
             <Route path="/guests" element={protectedPage(<GuestsPage />, undefined, true)} />
             <Route path="/security" element={protectedPage(<SecurityPage />, undefined, true)} />
             <Route path="/access" element={protectedPage(<Empty title="尚无可访问页面">请联系管理员授予页面权限。</Empty>)} />
-            <Route path="*" element={<Empty title="页面不存在"><NavLink className="text-link" to="/">返回视频库</NavLink></Empty>} />
+            <Route path="*" element={<Empty title="页面不存在"><NavLink className="text-link" to="/">返回高光时刻</NavLink></Empty>} />
           </Routes>
         </main>
       </div>
@@ -182,7 +182,7 @@ function AppLayout({ revision, setRevision }: { revision: number; setRevision: R
       {auth.session && (
         <nav className="bottom-nav" aria-label="主要导航">
           {[
-            ["/", "视频库", "library"],
+            ["/", "高光时刻", "library"],
             ["/upload", "上传", "upload"],
             ["/tasks", "任务", "history"],
             ["/categories", "配置", "settings"],

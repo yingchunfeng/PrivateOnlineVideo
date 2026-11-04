@@ -10,11 +10,12 @@
 .taxonomy-tabs button { gap: 8px; }
 .taxonomy-query { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
 .taxonomy-query input { width: 200px; }
-.taxonomy-table { min-width: 760px; }
+.taxonomy-table { min-width: 0; width: 100%; table-layout: fixed; }
 .taxonomy-table th:first-child { width: 22%; }
-.taxonomy-table td:first-child { overflow-wrap: anywhere; max-width: 230px; }
+.taxonomy-table th:last-child { width: 20%; }
+.taxonomy-table td:first-child { overflow-wrap: anywhere; max-width: none; min-width: 0; }
 .taxonomy-table td small { display: block; margin-top: 6px; }
-.taxonomy-tag-list { display: flex; flex-wrap: wrap; gap: 5px; max-width: 280px; }
+.taxonomy-tag-list { display: flex; flex-wrap: wrap; gap: 5px; max-width: none; min-width: 0; }
 .taxonomy-table tr.archived { color: var(--text-secondary); }
 .taxonomy-table .taxonomy-danger { color: var(--error); border-color: var(--error); }
 .taxonomy-editor-tags { border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }

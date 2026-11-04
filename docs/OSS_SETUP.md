@@ -2,7 +2,7 @@
 
 核验日期：2026-10-02。官方文档及用户准备材料已核对；本轮对用户HTTPS样例做了匿名HEAD，未运行STS、上传或云配置变更。
 
-历史更新依据：原用户准备记录及架构评审已于 2026-10-30 按确认范围清理，[自定义策略JSON](task/自定义策略的json.txt) 保留。以下是当时服务端上传、STS/V4 签名后 OSS 直连播放/下载的历史说明，“用户已准备”不等于云侧生效或程序已验收；当前公共读方案见[实施记录](task/SIMPLE_OSS_PLAN.md)，部署操作见[部署说明](DEPLOY_1PANEL.md)。
+历史更新依据：原用户准备记录及架构评审已于 2026-10-30 按确认范围清理，自定义策略 JSON 本地保留于 `docs/task/自定义策略的json.txt`。以下是当时服务端上传、STS/V4 签名后 OSS 直连播放/下载的历史说明，“用户已准备”不等于云侧生效或程序已验收；当前公共读方案见[项目说明](../README.md#架构与业务流程)，部署操作见[部署说明](DEPLOY_1PANEL.md)。
 
 当时补充：OSS媒体证书已生效，样例匿名HEAD=200且默认TLS校验通过，到期2026-12-30 23:59:59 UTC；用户确认样例为公共读，故匿名成功符合预期。本人私有视频/新上传对象的权限范围仍需确认，公开样例不作为鉴权证据。旧实云计划已清理，当前网站证书和启动步骤见[部署说明](DEPLOY_1PANEL.md)，不从历史记录推定新环境已验收。
 
@@ -99,7 +99,7 @@ oss.json保留用户已有长期RAM AK格式；STS临时凭据由服务端Assume
 
 按实际使用的 API 对照官方 Action 表核验。只用已知Bucket的服务端 SDK，不需要为了官网 listBuckets 示例授予所有Bucket列表权限，更不建议直接授予 AliyunOSSFullAccess。列举权限的 Resource 是 Bucket，本身的前缀限制要通过 Condition；对象读写 Resource 则具体到前缀对象范围。
 
-提供的[策略JSON](task/自定义策略的json.txt)在对象资源`xzlbucket/onlineVideo/*`上允许GetObject/PutObject，在Bucket资源上允许ListObjects并限制Prefix为onlineVideo/*，不包含删除/改ACL授权；JSON结构与范围已只读核验，用户明确确认同时绑定RAM用户和角色。角色信任和实际AssumeRole/上传仍需验收。复用同角色时，AssumeRole的Policy分别收窄用途，最终权限是角色策略与会话策略交集，不自动改云权限。
+当时提供的策略 JSON（本地 `docs/task/自定义策略的json.txt`）在对象资源`xzlbucket/onlineVideo/*`上允许GetObject/PutObject，在Bucket资源上允许ListObjects并限制Prefix为onlineVideo/*，不包含删除/改ACL授权；JSON结构与范围已只读核验，用户明确确认同时绑定RAM用户和角色。角色信任和实际AssumeRole/上传仍需验收。复用同角色时，AssumeRole的Policy分别收窄用途，最终权限是角色策略与会话策略交集，不自动改云权限。
 
 业务“标签”保存于SQLite，本阶段不调用OSS Object Tagging，不需要为业务标签额外授予 PutObjectTagging。若Bucket已有KMS等要求，附加权限须另核查，不默认开启或扩大授权。默认不授予 DeleteObject、AbortMultipartUpload、修改Bucket ACL/Policy等动作；分片/对象清理要单独说明范围并经用户确认。
 
@@ -131,6 +131,6 @@ oss.json保留用户已有长期RAM AK格式；STS临时凭据由服务端Assume
 
 ## 7. 当前剩余准备与阶段交接
 
-当时已准备 Bucket、前缀、AK文件、角色ARN、Get/Put/List策略、OSS证书与公开远程样例；当时剩余为本人私有业务范围、角色信任/STS实效、CORS、运行限额/本地上传样例/分析器、根.env及测试范围/费用。旧启动清单已清理，不继续按旧卡推进；当前范围见[工作清单](task/UNFINISHED_WORK.md)，新环境配置见[首次安装指南](NEW_INSTALL.md)。
+当时已准备 Bucket、前缀、AK文件、角色ARN、Get/Put/List策略、OSS证书与公开远程样例；当时剩余为本人私有业务范围、角色信任/STS实效、CORS、运行限额/本地上传样例/分析器、根.env及测试范围/费用。旧启动清单已清理，不继续按旧卡推进；当前验证边界见[项目说明](../README.md#验证范围)，新环境配置见[首次安装指南](NEW_INSTALL.md)。
 
 第二阶段完成后可在Windows本机用公网Endpoint测试真实OSS上传/播放/下载，是否通过由P2-MEDIA-05输出决定。HTTPS样例可访问不等于私有STS授权通过；实云验收须分别验证匿名拒绝、有效签名读取、上传/登记/续签。服务器内网、网站HTTPS/安卓、备份/更新与续期运维归第三阶段。

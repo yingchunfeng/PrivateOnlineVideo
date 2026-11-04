@@ -5,7 +5,7 @@
   min-width: 0;
 }
 
-.upload-submit-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.upload-submit-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 10px; min-width: 0; }
 .prepared-upload-page .upload-import-trigger { min-height: 44px; white-space: nowrap; }
 .upload-import-dialog .import-panel { margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
 .upload-import-dialog .import-panel::before { display: none; }
@@ -394,40 +394,96 @@
     max-height: 300px;
   }
 
-  .prepared-upload-page .upload-header-right {
-    flex-wrap: wrap;
-  }
-
   .prepared-upload-page .upload-submit-actions { flex: 1; }
   .prepared-upload-page .upload-submit-actions > button { flex: 1; }
+}
+
+/* 平板 / 手机：页头改为纵向堆叠，避免账户信息条与操作按钮互相挤压、按钮文字被裁切 */
+@media (max-width: 900px) {
+  .prepared-upload-page .upload-header-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .prepared-upload-page .upload-header-left {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .prepared-upload-page .upload-page-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prepared-upload-page .upload-header-right {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .prepared-upload-page .storage-chip {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 12px 6px 8px;
+  }
+
+  .prepared-upload-page .storage-chip-info {
+    min-width: 0;
+  }
+
+  .prepared-upload-page .storage-chip-name,
+  .prepared-upload-page .storage-chip-cap {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prepared-upload-page .upload-submit-actions {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .prepared-upload-page .upload-submit-actions > button {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: 10px 14px;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .prepared-upload-page .upload-import-trigger {
+    white-space: nowrap;
+  }
+
+  .prepared-upload-page .save-action-btn {
+    padding: 10px 14px !important;
+    min-height: 46px !important;
+  }
 }
 
 @media (max-width: 600px) {
   .prepared-upload-page .upload-header-bar,
   .prepared-upload-page .upload-header-left,
   .prepared-upload-page .upload-header-right {
-    gap: 10px;
-  }
-
-  .prepared-upload-page .upload-header-left {
-    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .prepared-upload-page .upload-page-title {
     font-size: 1.1rem !important;
   }
-
-  .prepared-upload-page .storage-chip {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .prepared-upload-page .save-action-btn {
-    width: 100%;
-  }
-
-  .prepared-upload-page .upload-submit-actions { width: 100%; flex-wrap: wrap; }
-  .prepared-upload-page .upload-submit-actions > button { flex-basis: 100%; }
 
   .upload-metadata-fields {
     grid-template-columns: minmax(0, 1fr);

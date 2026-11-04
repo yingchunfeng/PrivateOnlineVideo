@@ -1,6 +1,7 @@
 .upload-source-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 8px 18px;
   min-width: 0;
 }
@@ -24,13 +25,17 @@
 .upload-source-grid .upload-source-trigger {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   gap: 0;
   width: 100%;
+  height: 100%;
   min-height: 202px;
-  padding: 18px 10px;
+  padding: 18px 12px;
   border-radius: 14px;
   background: radial-gradient(circle at 50% 50%, var(--surface-high) 0%, var(--surface) 100%);
   color: var(--text);
+  text-align: center;
   white-space: normal;
   letter-spacing: normal;
   transition: border-color .2s ease, box-shadow .2s ease;
@@ -71,7 +76,9 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
+  width: 100%;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .upload-source-title {
@@ -96,11 +103,11 @@
 }
 
 .upload-source-note {
-  grid-column: 1 / -1;
   color: var(--text-secondary);
   font-size: .72rem;
   line-height: 1.5;
   min-height: 22px;
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -115,17 +122,57 @@
   }
 }
 
-@media (max-width: 600px) {
+/* 窄屏（手机 / 小屏平板）：保持两列并列，压缩卡片内边距与图标尺寸，文字允许换行 */
+@media (max-width: 680px) {
   .upload-source-grid {
-    gap: 8px 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
   }
 
   .upload-source-grid .folder-source::before {
-    left: -8px;
+    left: -6px;
   }
 
   .upload-source-grid .upload-source-trigger {
-    min-height: 220px;
-    padding: 14px 8px;
+    min-height: 0;
+    height: 100%;
+    padding: 12px 8px;
+  }
+
+  .upload-source-grid .radar-scanner-circle {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 8px;
+  }
+
+  .upload-source-grid .radar-icon-center {
+    width: 36px;
+    height: 36px;
+  }
+
+  .upload-source-grid .radar-icon-center svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .upload-source-grid .radar-text-group {
+    gap: 3px;
+  }
+
+  .upload-source-title {
+    font-size: .82rem;
+  }
+
+  .upload-source-grid .radar-subtext {
+    font-size: .72rem;
+  }
+
+  .upload-source-grid .radar-spec-note,
+  .upload-source-note {
+    font-size: .7rem;
+  }
+
+  .upload-source-note {
+    min-height: 0;
   }
 }

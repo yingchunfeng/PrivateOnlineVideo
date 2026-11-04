@@ -113,7 +113,7 @@ test("视频数据闭环：真实可解码样例、新上传/公共登记/历史
 
   await page.goto("about:blank"); await app.close(); database.close(); database = openDatabase(path); app = await start();
   assert.ok(Math.abs(durationRow(uploaded.id).duration! - actual) < .001); assert.ok(Math.abs(durationRow(history.id).duration! - actual) < .001);
-  loggedIn = false; await page.goto(origin); await expect(page).toHaveURL(/\/login$/); await page.getByLabel("密码", { exact: true }).fill("isolated-test-password"); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.locator(".video-card").filter({ hasText: "新上传真实时长" }).locator(".sci-card-hud-time")).toBeVisible();
+  loggedIn = false; await page.goto(origin); await expect(page).toHaveURL(/\/login$/); await page.getByLabel("密码", { exact: true }).fill("isolated-test-password"); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click(); await expect(page.locator(".video-card").filter({ hasText: "新上传真实时长" }).locator(".sci-card-hud-time")).toBeVisible();
 
   await page.goto(`${origin}/videos/${uploaded.id}`); await page.getByRole("button", { name: "编辑信息", exact: true }).click(); await expect(dialog).toBeVisible();
   const originalCover = (await createRepositories(database, () => new Date(at), config.library).videos.findOwned("owner", uploaded.id))!.video.coverObjectKey;

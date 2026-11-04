@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "build:release": "tsc -p tsconfig.json --noEmit && node --import tsx test/release-build.ts",
     "preview": "vite preview --host 127.0.0.1 --port 5173 --strictPort",
-    "test": "node --import tsx --test test/unit.test.ts test/media-policy.test.ts test/video-upgrade.test.ts test/account-security.test.ts test/onboarding.test.ts test/theme.test.ts test/space-meteor-engine.test.ts test/space-enhancements.test.ts test/media-duration.test.ts test/guest-permissions.test.ts",
+    "test": "node --import tsx --test test/unit.test.ts test/media-policy.test.ts test/video-upgrade.test.ts test/account-security.test.ts test/onboarding.test.ts test/theme.test.ts test/space-meteor-engine.test.ts test/space-enhancements.test.ts test/media-duration.test.ts test/guest-permissions.test.ts test/release-policy.test.ts",
     "test:theme": "node --import tsx --test test/theme.test.ts test/theme-browser.test.ts",
     "test:ui": "node --import tsx --test --test-concurrency=1 test/management-primitives-browser.test.ts test/ui-home-browser.test.ts test/ui-management-browser.test.ts",
     "test:ui:batch2": "node --import tsx --test --test-concurrency=1 test/site-settings-browser.test.ts test/video-data-browser.test.ts",

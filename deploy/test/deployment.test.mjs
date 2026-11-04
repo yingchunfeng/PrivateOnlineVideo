@@ -6,7 +6,7 @@ import { relative, resolve } from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { initializeFreshDatabase } from "../init-db.mjs";
-import { openDatabase, WORKSPACE_ROOT } from "../../apps/api/dist/db/database.js";
+import { migrationManifest, openDatabase, WORKSPACE_ROOT } from "../../apps/api/dist/db/database.js";
 import { buildInstallationApp, readInstallationConfig } from "../../apps/api/dist/core/installation-runtime.js";
 import { readAuthSettings } from "../../apps/api/dist/modules/auth/settings.js";
 import { initializeInstallation } from "../../apps/api/dist/modules/setup/bootstrap.js";
@@ -25,7 +25,7 @@ test("fresh initialization imports the full schema without generating secrets", 
   const item = fixture();
   const result = initializeFreshDatabase(item.args);
   assert.equal(result.integrity, "ok");
-  assert.equal(result.migrations, 6);
+  assert.equal(result.migrations, migrationManifest().length);
   const database = openDatabase(item.databasePath);
   try {
     assert.equal(database.client.prepare("SELECT count(*) n FROM users").get().n, 0);
@@ -133,7 +133,10 @@ test("relative CLI config paths resolve from workspace root, not current directo
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /integrity=ok/);
   const database = new Database(item.databasePath, { readonly: true, fileMustExist: true });
-  try { assert.equal(database.prepare("SELECT count(*) n FROM schema_migrations").get().n, 6); }
+  try {
+    assert.deepEqual(database.prepare("SELECT version,checksum FROM schema_migrations ORDER BY version").all(),
+      migrationManifest().map(({ version, checksum }) => ({ version, checksum })));
+  }
   finally { database.close(); }
   const refused = spawnSync(process.execPath, [resolve(WORKSPACE_ROOT, "deploy/init-db.mjs"), ...item.args], { encoding: "utf8" });
   assert.equal(refused.status, 1);

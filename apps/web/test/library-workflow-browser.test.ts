@@ -136,7 +136,7 @@ test("分类标签CRUD同步首页、播放旁编辑分类标签后筛选命中"
     const row = page.locator(`[data-tag-id="${addedTag.id}"]`); await row.getByRole("button", { name: "编辑标签", exact: true }).click(); await page.getByLabel("标签名称").fill("复习"); await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "确认保存", exact: true }).click();
     await expect.poll(() => fixture.config().tags.find(tag => tag.id === addedTag.id)?.name).toBe("复习");
-    await page.locator(".side-nav-menu").getByRole("link", { name: "首页库", exact: true }).click(); await expect(page.getByRole("button", { name: "学习", exact: true })).toBeVisible();
+    await page.locator(".side-nav-menu").getByRole("link", { name: "高光时刻", exact: true }).click(); await expect(page.getByRole("button", { name: "学习", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "学习", exact: true }).click(); await expect(page.locator(".video-card")).toHaveCount(0);
     await page.getByRole("button", { name: "全部视频", exact: true }).click(); await page.locator(".video-card").first().locator(".video-card-preview").click();
     await page.getByRole("button", { name: "编辑信息", exact: true }).click();

@@ -76,7 +76,7 @@ test("真实3600秒H264：长位置Range/续签状态/独立心跳/进度重启/
     await route.fulfill({ response });
   });
   const qaDir = fileURLToPath(new URL(`../qa/stage2-long-${new Date().toISOString().replace(/[:.]/g, "-")}`, import.meta.url)); await mkdir(qaDir, { recursive: true }); console.log(`Long-video evidence: ${qaDir}`);
-  const login = async () => { await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByLabel("动态验证码").fill(totp(credentials.totpSecret).generate()); await page.getByRole("button", { name: "进入视频库" }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
+  const login = async () => { await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByLabel("动态验证码").fill(totp(credentials.totpSecret).generate()); await page.getByRole("button", { name: "进入高光时刻" }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
   let videoId = ""; let initialSessionId = ""; let initialExpiry = ""; let started = 0;
   const inspectMedia = () => page.locator("video").evaluate(node => { const video = node as HTMLVideoElement; return { duration: video.duration, position: video.currentTime, paused: video.paused, seeking: video.seeking, readyState: video.readyState, buffered: Array.from({ length: video.buffered.length }, (_, i) => [video.buffered.start(i), video.buffered.end(i)]) }; });
   await t.test("真实上传/FFprobe与HTMLVideoElement均确认3600秒", async () => {

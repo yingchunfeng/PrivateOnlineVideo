@@ -1,13 +1,20 @@
-.task-table { min-width: 1000px; }
+.task-table { min-width: 0; width: 100%; table-layout: fixed; }
 .task-list-controls label { white-space: nowrap; }
-.task-table .task-title-cell { min-width: 190px; max-width: 280px; }
+.task-table th:nth-child(1) { width: 14%; }
+.task-table th:nth-child(2) { width: 18%; }
+.task-table th:nth-child(3) { width: 16%; }
+.task-table th:nth-child(4) { width: 20%; }
+.task-table th:nth-child(5) { width: 32%; }
+.task-table .task-title-cell { min-width: 0; max-width: none; }
 .task-title-cell > strong, .task-title-cell > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-table td > small, .task-state-cell > small, .task-row-progress > small { display: block; margin-top: 5px; }
-.task-state-cell { min-width: 170px; max-width: 250px; overflow-wrap: anywhere; }
-.task-row-progress { min-width: 150px; position: relative; display: grid; gap: 5px; }
-.task-row-progress progress { width: 100%; max-width: 190px; height: 8px; accent-color: var(--accent); }
-.task-time-cell { width: 145px; min-width: 125px; font-size: .82rem; color: var(--text-secondary); }
-.task-row-actions { min-width: 210px; max-width: 300px; }
+.task-state-cell { min-width: 0; max-width: none; overflow-wrap: anywhere; }
+.task-row-progress { min-width: 0; position: relative; display: grid; gap: 5px; }
+.task-row-progress progress { width: 100%; max-width: none; height: 8px; accent-color: var(--accent); }
+.task-time-cell { min-width: 0; font-size: .82rem; color: var(--text-secondary); }
+.task-row-actions { min-width: 0; max-width: none; }
+.task-row-actions .management-actions { flex-wrap: wrap; }
+.task-row-actions .management-actions :is(button, .button) { white-space: nowrap; }
 .task-row-actions .task-file-selector { white-space: nowrap; }
 .task-detail { overflow-wrap: anywhere; }
 .task-detail-head { display: flex; align-items: flex-start; gap: 14px; }
@@ -17,5 +24,9 @@
 .task-detail .transfer-meter small { display: block; margin-top: 6px; }
 @media (max-width: 600px) {
   .task-detail-head { flex-wrap: wrap; }
-  .task-row-actions { max-width: 220px; }
+  .task-table :is(th, td) { padding: 10px 8px; }
+  .task-time-cell { white-space: normal; overflow-wrap: anywhere; font-size: .75rem; }
+  .task-row-actions .management-actions { flex-direction: column; align-items: stretch; gap: 6px; }
+  .task-row-actions .management-actions :is(button, .button) { width: 100%; justify-content: center; white-space: normal; }
+  .task-row-actions .task-file-selector { white-space: normal; }
 }

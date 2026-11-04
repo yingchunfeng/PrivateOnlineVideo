@@ -2159,7 +2159,9 @@ body::before {
 @media(max-width: 600px) {
   .pending-upload-choice img, .pending-cover-placeholder { width: 52px; height: 40px; }
   .task-cover-image { width: 88px; height: 64px; }
-  .task-list-controls { align-items: stretch; flex-wrap: wrap; }
-  .task-list-controls label { flex-wrap: wrap; }
+  .task-list-controls { align-items: center; flex-wrap: nowrap; gap: 8px; }
+  .task-list-controls label { flex-wrap: nowrap; gap: 6px; min-width: 0; }
+  .task-list-controls label select { max-width: 100%; min-width: 0; }
+  .task-list-controls .secondary { flex-shrink: 0; white-space: nowrap; }
   .configuration-tag-range { min-width: 180px; }
 }

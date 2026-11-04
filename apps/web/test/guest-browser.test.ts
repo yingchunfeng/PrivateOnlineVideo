@@ -51,7 +51,7 @@ test("访客管理真实HTTP浏览器：邮箱管理员、一次密码交付、�
   const adminContext = await context(); const page = await adminContext.newPage();
   const adminLogin = async () => { await page.goto(`${origin}/login`); await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByLabel("邮箱验证码", { exact: true })).toBeVisible();
     const message = messages.at(-1)!; assert.equal(message.kind, "verification"); if (message.kind !== "verification") throw new Error("missing test mail");
-    await page.getByLabel("邮箱验证码", { exact: true }).fill(message.code); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.locator(".side-dock")).toBeVisible();
+    await page.getByLabel("邮箱验证码", { exact: true }).fill(message.code); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click(); await expect(page.locator(".side-dock")).toBeVisible();
   };
   const csrf = async (context: BrowserContext) => { const response = await context.request.get(`${origin}/api/auth/me`); assert.equal(response.status(), 200); return (await response.json()).data.csrfToken as string; };
   const adminRequest = async (url: string, data: unknown, method = "POST") => adminContext.request.fetch(`${origin}${url}`, { method, data, headers: { origin, "x-csrf-token": await csrf(adminContext) } });
@@ -60,7 +60,7 @@ test("访客管理真实HTTP浏览器：邮箱管理员、一次密码交付、�
   await adminLogin(); const registered = await adminRequest("/api/videos/register-public", { publicUrl: `${config.library.mediaBaseUrl}/onlineVideo/readonly.mp4`, title: "只读验收视频", categoryId: category, tags: [] }); assert.equal(registered.status(), 200); const readonlyVideo = (await registered.json()).data as { id: string };
   await page.goto(`${origin}/guests`); await expect(page.getByRole("heading", { name: "访客管理", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "新增访客", exact: true }).click(); let editor = page.getByRole("dialog", { name: "新增访客", exact: true });
-  await expect(editor.getByRole("checkbox", { name: /^首页库/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^上传视频/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^页面管理/ })).toBeChecked();
+  await expect(editor.getByRole("checkbox", { name: /^高光时刻/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^上传视频/ })).toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^页面管理/ })).toBeChecked();
   await expect(editor.getByRole("checkbox", { name: /^编辑视频/ })).not.toBeChecked(); await expect(editor.getByRole("checkbox", { name: /^仅删除/ })).not.toBeChecked();
   const count = () => (database.client.prepare("SELECT count(*) n FROM guests").get() as { n: number }).n;
   await editor.getByLabel("访客名称", { exact: true }).fill("取消不创建"); await editor.getByRole("button", { name: "取消", exact: true }).click(); assert.equal(count(), 0);

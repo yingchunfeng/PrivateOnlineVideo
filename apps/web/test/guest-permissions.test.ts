@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GUEST_DEFAULT_PERMISSIONS } from "@online-video/shared";
+import { GUEST_DEFAULT_PERMISSIONS, GUEST_PERMISSION_LABELS } from "@online-video/shared";
 import type { AuthSession } from "@online-video/shared";
 import { hasPermission, landingPage } from "../src/authz";
 import { validateAuthSession } from "../src/api/auth";
@@ -11,6 +11,7 @@ const guest: AuthSession = { csrfToken: "isolated-csrf", user: { id: "shared-own
 
 test("访客默认权限、授权页落地及管理员兼容身份保持分离", () => {
   assert.deepEqual(GUEST_DEFAULT_PERMISSIONS, ["library", "upload", "pages"]);
+  assert.equal(GUEST_PERMISSION_LABELS.library, "高光时刻");
   assert.equal(hasPermission(null, "library"), false); assert.equal(hasPermission(guest, "video_edit"), false); assert.equal(hasPermission(guest, "video_delete"), false);
   assert.equal(landingPage(guest), "/");
   assert.equal(landingPage({ ...guest, guest: { ...guest.guest!, permissions: ["pages"] } }), "/pages");

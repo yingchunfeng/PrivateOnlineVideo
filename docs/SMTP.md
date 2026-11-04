@@ -1,6 +1,6 @@
 # SMTP 数据库配置
 
-> **验收状态更新（2026-10-26）：用户确认真实邮件验证已通过。** 下文未发送真实邮件、真实投递待验等表述是当时的执行记录，不再作为当前待办；当前状态见[未完成工作清单](task/UNFINISHED_WORK.md)，v5 配置及正式执行记录见[QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
+> **验收状态更新（2026-10-26）：用户确认真实邮件验证已通过。** 下文未发送真实邮件、真实投递待验等表述是当时的执行记录，不再作为当前待办；当前验证边界见[项目说明](../README.md#验证范围)，v5 配置及正式执行记录见[QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
 
 当前方案为 v5：使用 `smtp_provider_types` 支持类型码表和 `smtp_provider_configs` 分别保存 QQ/163 配置，详见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。以下保留 v4 单条 `smtp_config` 配置方案及实际执行记录；原表不删除，v5 运行时不再读取它。
 
@@ -71,8 +71,8 @@ npm run mail:configure -w @online-video/api -- --help
 
 用户已单独明确授权正式目标 `E:/onlineVideo/.local/data/video-library.db` 的备份、v4 升级和 SMTP 配置保存，并确认输入末尾的中文“码”为说明文字。已通过标准输入导入配置，未新建明文凭证 JSON。
 
-- [迁移前一致性备份](../.local/backups/before-migration-1791102128391-b47fdfb9-2704-487d-8acc-762fdeb69908.db)：v3/29 表。
-- [配置保存前一致性备份](../.local/backups/before-smtp-config-1791102143801-64d5454a-a3a1-4ae4-9822-a4cdb7b8c743.db)：v4/30 表，SMTP 表为空。
-- [迁移前校验摘要](../.local/acceptance/smtp-v4-20261004-a972f3cb/before.json)与[迁移后校验报告](../.local/acceptance/smtp-v4-20261004-a972f3cb/after.json)：正式库现为 v4/30 表，SMTP 配置 1 条；原有表定义、业务记录及 ledger 前 3 条一致，账号 1、视频 8、恢复码 10 保留。原 `auth.key`、手工 `sqlite-test.db` 和 0001～0003 SQL 的 SHA-256 保持一致。
+- 迁移前一致性备份（仅本地）：`.local/backups/before-migration-1791102128391-b47fdfb9-2704-487d-8acc-762fdeb69908.db`，v3/29 表。
+- 配置保存前一致性备份（仅本地）：`.local/backups/before-smtp-config-1791102143801-64d5454a-a3a1-4ae4-9822-a4cdb7b8c743.db`，v4/30 表，SMTP 表为空。
+- 迁移前校验摘要与迁移后校验报告（仅本地）：`.local/acceptance/smtp-v4-20261004-a972f3cb/before.json`、`.local/acceptance/smtp-v4-20261004-a972f3cb/after.json`；正式库现为 v4/30 表，SMTP 配置 1 条；原有表定义、业务记录及 ledger 前 3 条一致，账号 1、视频 8、恢复码 10 保留。原 `auth.key`、手工 `sqlite-test.db` 和 0001～0003 SQL 的 SHA-256 保持一致。
 - 原库与两个备份的完整性均为 ok，外键异常均为 0。正式配置为 `smtp.qq.com:465`、直接 TLS，授权码可用原密钥解密且未以明文保存；正式 Auth runtime 已成功加载 SMTP 适配器，未连接 SMTP 或发送真实邮件。
 - API 构建、包含管理脚本的类型检查与相关 45 项测试通过。现有 API 进程未强制终止，用户正常重启后读取新配置。

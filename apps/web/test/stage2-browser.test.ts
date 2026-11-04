@@ -60,14 +60,14 @@ test("阶段2手机浏览器：隔离真SQLite/Auth/业务HTTP和本地OSS协议
   await context.addInitScript("window.__name = (fn) => fn;"); const page = await context.newPage(); page.setDefaultTimeout(8000);
   const qaDir = fileURLToPath(new URL(`../qa/stage2-${new Date().toISOString().replace(/[:.]/g, "-")}`, import.meta.url)); await mkdir(qaDir, { recursive: true });
   console.log(`Stage2 real HTTP QA screenshots: ${qaDir}`);
-  const login = async () => { await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByLabel("动态验证码").fill(totp(credentials.totpSecret).generate({ timestamp: now().getTime() })); await page.getByRole("button", { name: "进入视频库" }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
+  const login = async () => { await page.getByLabel("密码", { exact: true }).fill(credentials.password); await page.getByLabel("动态验证码").fill(totp(credentials.totpSecret).generate({ timestamp: now().getTime() })); await page.getByRole("button", { name: "进入高光时刻" }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); };
   const fixtureBytes = await readFile(new URL("./fixtures/demo.webm", import.meta.url));
   const uploadBytes = Buffer.concat([fixtureBytes, Buffer.alloc(262145 - fixtureBytes.length)]);
   let videoId = ""; let uploadId = ""; const mediaRequests: string[] = []; page.on("request", request => { if (request.resourceType() === "media") mediaRequests.push(new URL(request.url()).origin); });
   await t.test("真HTTP登录、HttpOnly Cookie、刷新恢复与组织管理", async () => {
     await page.goto(origin); await login(); await expect(page.getByRole("heading", { name: "这里还没有视频" })).toBeVisible();
     const cookie = (await context.cookies()).find(value => value.name === "ov_session"); assert.ok(cookie?.httpOnly); assert.equal(cookie?.sameSite, "Strict");
-    await page.reload(); await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
+    await page.reload(); await expect(page.getByRole("heading", { name: "云影匣·高光时刻" })).toBeVisible();
     await page.getByRole("link", { name: "分类", exact: true }).click();
     const create = async (kind: string, name: string) => { await page.getByRole("button", { name: kind, exact: true }).click(); await page.getByLabel(`${kind}名称`, { exact: true }).fill(name); await page.getByRole("button", { name: `新建${kind}`, exact: true }).click(); await expect(page.getByLabel(`重命名 ${name}`)).toBeVisible(); };
     await create("分类", "旅行"); await create("分组", "2026旅行"); await create("标签", "杭州"); await create("标签", "夜景");
@@ -90,7 +90,7 @@ test("阶段2手机浏览器：隔离真SQLite/Auth/业务HTTP和本地OSS协议
     assert.equal((database.client.prepare("SELECT count(*) n FROM videos").get() as { n: number }).n, 1); assert.equal(protocol.objects.size, 1);
     assert.equal((database.client.prepare("SELECT count(*) n FROM video_tag_links WHERE removed_at IS NULL").get() as { n: number }).n, 2);
     await page.reload(); await page.getByRole("button", { name: /原片.webm.*读取任务/ }).click(); await expect(page.getByText("服务端已确认登记", { exact: true })).toBeVisible();
-    await page.getByRole("link", { name: "视频库", exact: true }).click();
+    await page.getByRole("link", { name: "高光时刻", exact: true }).click();
     await page.getByRole("checkbox", { name: "2026旅行", exact: true }).check(); await page.getByRole("checkbox", { name: "杭州", exact: true }).check(); await page.getByRole("checkbox", { name: "夜景", exact: true }).check(); await expect(page.locator(".video-card")).toHaveCount(1);
     await page.screenshot({ path: `${qaDir}/phone-library.png`, fullPage: true });
   });

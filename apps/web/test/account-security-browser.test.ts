@@ -51,11 +51,11 @@ test("账号手机浏览器：真实 SQLite/HTTP/Cookie/CSRF + Fake 邮件，绑
   };
   const security = async () => { await page.goto(`${origin}/security`); await expect(page.getByRole("heading", { name: "账户安全", exact: true })).toBeVisible(); await expect(page.getByRole("region", { name: "账号安全摘要" })).toBeVisible(); };
   const loginTotp = async () => {
-    await page.getByLabel("密码", { exact: true }).fill(currentPassword); await page.getByLabel(/^动态验证码/).fill(token()); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
+    await page.getByLabel("密码", { exact: true }).fill(currentPassword); await page.getByLabel(/^动态验证码/).fill(token()); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
   };
   const loginEmail = async () => {
     advance(); await page.getByLabel("密码", { exact: true }).fill(currentPassword); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByLabel("邮箱验证码", { exact: true })).toBeVisible();
-    await page.getByLabel("邮箱验证码", { exact: true }).fill(sender.latest("login").code); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
+    await page.getByLabel("邮箱验证码", { exact: true }).fill(sender.latest("login").code); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
   };
 
   await t.test("旧账号 TOTP 登录与首次绑定；Cookie保护、当前密码验证、成功后转邮箱登录", async () => {
@@ -80,7 +80,7 @@ test("账号手机浏览器：真实 SQLite/HTTP/Cookie/CSRF + Fake 邮件，绑
     const before = sender.messages.length; await page.getByLabel("密码", { exact: true }).fill("wrong-password"); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByRole("alert").first()).toBeVisible(); assert.equal(sender.messages.length, before);
     await page.getByLabel("密码", { exact: true }).fill(currentPassword); await page.getByRole("button", { name: "发送验证码", exact: true }).click(); await expect(page.getByLabel("邮箱验证码", { exact: true })).toBeVisible();
     await expect(page.getByText("验证码已发送至 o***@qq.com", { exact: true })).toBeVisible(); await expect(page.getByRole("button", { name: /秒后可重发/ })).toBeDisabled(); await phoneCheck("phone-email-login");
-    await page.getByLabel("邮箱验证码", { exact: true }).fill(sender.latest("login").code); await noCredentialsStored(); await page.getByRole("button", { name: "进入视频库", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
+    await page.getByLabel("邮箱验证码", { exact: true }).fill(sender.latest("login").code); await noCredentialsStored(); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
     await page.reload(); await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
   });
 

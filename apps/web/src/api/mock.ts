@@ -2,7 +2,7 @@ import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, isVi
 import type { ApplicationUsage, AuthSession, Category, CreateUploadRequest, EmailChallenge, EmailChallengePurpose, ErrorCode, ImportPreview, LibraryConfiguration, LibraryGroup, LoginRequest, LoginSession, PlaybackSession, SaveLibraryConfigurationRequest, Tag, UploadTask, VideoDetail, UploadedPart } from "@online-video/shared";
 import type { Transport } from "./client";
 
-export const mockScenarios = { normal: "正常", empty: "空视频库", long: "长标题", offline: "网络中断", expired: "会话过期", limit: "流量已达上限", unconfigured: "限额未配置", unlimited: "显式不限额", storage: "存储不可用", uploadFailure: "分片失败一次", completeFailure: "完成失败一次", finalizing: "遗留完成中任务", unknownUsage: "未知统计来源", usageUnavailable: "用量不可用" } as const;
+export const mockScenarios = { normal: "正常", empty: "空高光时刻", long: "长标题", offline: "网络中断", expired: "会话过期", limit: "流量已达上限", unconfigured: "限额未配置", unlimited: "显式不限额", storage: "存储不可用", uploadFailure: "分片失败一次", completeFailure: "完成失败一次", finalizing: "遗留完成中任务", unknownUsage: "未知统计来源", usageUnavailable: "用量不可用" } as const;
 export type MockScenario = keyof typeof mockScenarios;
 let scenario: MockScenario = "normal";
 export function setMockScenario(value: MockScenario) { scenario = value; }

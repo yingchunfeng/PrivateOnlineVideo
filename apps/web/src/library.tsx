@@ -9,7 +9,7 @@ import { Empty, ErrorNotice, Loading, useLoad } from "./ui";
 export const loadLibrary = async () => {
   const value = await api.request<LibraryConfig>("/api/library");
   validatePublicMediaPolicy(value);
-  if (!Array.isArray(value.categories)) throw new ApiError("INVALID_RESPONSE", "视频库分类配置无效");
+  if (!Array.isArray(value.categories)) throw new ApiError("INVALID_RESPONSE", "高光时刻分类配置无效");
   return value;
 };
 const LIBRARY_CHANGE_CHANNEL = "online-video-library-configuration";

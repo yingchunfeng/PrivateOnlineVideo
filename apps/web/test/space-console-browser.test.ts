@@ -113,6 +113,50 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
       }
     });
 
+    await t.test("video data panel hides the public address by default and supports mouse and keyboard toggling", async () => {
+      for (const width of [1440, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        for (const theme of ["light", "dark"]) {
+          await page.goto(`${origin}/videos/space-0`);
+          await selectPersonalTheme(page, theme);
+          const panel = page.locator("details.sci-data-panel");
+          const toggle = panel.locator("summary");
+          const address = panel.getByLabel("公共地址", { exact: true });
+          await expect(toggle).toContainText("数据面板");
+          await expect(panel).not.toHaveAttribute("open");
+          await expect(address).toBeHidden();
+          await expect(panel.locator(".sci-data-grid")).toBeHidden();
+          await expect(page.locator(".video-detail-bar").getByLabel("公共地址", { exact: true })).toHaveCount(0);
+          await assertWidth();
+          await panel.screenshot({ path: `${evidence}/video-panel-collapsed-${theme}-${width}.png` });
+
+          await page.locator("video").evaluate(node => { node.dataset.panelTest = "same-player"; });
+          await toggle.click();
+          await expect(panel).toHaveAttribute("open", "");
+          await expect(toggle.locator(".sci-data-panel-collapse")).toBeVisible();
+          await expect(address).toBeVisible();
+          await expect(address).toHaveValue(videos[0]!.publicUrl!);
+          await expect(address).not.toBeEditable();
+          await expect(panel.getByRole("link", { name: "打开原地址", exact: true })).toHaveAttribute("href", videos[0]!.publicUrl!);
+          await expect(panel.getByRole("button", { name: "复制公共地址", exact: true })).toBeVisible();
+          await expect(panel.locator(".sci-data-cell")).toHaveCount(7);
+          await assertWidth();
+          await panel.screenshot({ path: `${evidence}/video-panel-expanded-${theme}-${width}.png` });
+
+          await toggle.focus();
+          await page.keyboard.press("Enter");
+          await expect(address).toBeHidden();
+          await page.keyboard.press("Space");
+          await expect(address).toBeVisible();
+          await expect(page.locator("video")).toHaveAttribute("data-panel-test", "same-player");
+          await page.reload();
+          await expect(page.locator("video")).toBeVisible();
+          await expect(address).toBeHidden();
+        }
+      }
+      await page.setViewportSize({ width: 1600, height: 1100 });
+    });
+
     await t.test("empty state and confirmed-byte rings never invent completion", async () => {
       await page.goto(`${origin}/?q=no-match`);
       await expect(page.getByRole("heading", { name: "没有找到匹配的视频" })).toBeVisible();
@@ -216,7 +260,7 @@ test("scheme A+: decorative isolation, dynamic atmosphere, playback focus and re
         await assertWidth();
       };
       try {
-        for (const [name, heading] of [["上传视频", "上传 / 编辑视频"], ["任务列表", "任务列表"], ["首页库", "云影匣·属于我的光影"]]) {
+        for (const [name, heading] of [["上传视频", "上传 / 编辑视频"], ["任务列表", "任务列表"], ["高光时刻", "云影匣·高光时刻"]]) {
           await page.getByRole("navigation", { name: "系统主菜单", exact: true }).getByRole("link", { name: name!, exact: true }).click();
           await expect(page.getByRole("heading", { name: heading!, exact: true })).toBeVisible();
           await verifyShared();

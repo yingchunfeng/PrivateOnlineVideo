@@ -118,7 +118,7 @@ test("任务表格：原文件校验、开始暂停续传、跨页执行、详�
     await row.getByLabel("原文件 demo.webm").setInputFiles({ name: "demo.webm", mimeType: "video/webm", buffer: fixture.media }); await expect(row.getByRole("button", { name: "开始 / 继续上传", exact: true })).toBeEnabled();
     await row.getByRole("button", { name: "开始 / 继续上传", exact: true }).click(); await expect(row.getByRole("button", { name: "暂停上传" })).toBeVisible(); await row.getByRole("button", { name: "暂停上传" }).click(); await expect(row).toContainText("本机已暂停");
     await new Promise(resolve => setTimeout(resolve, 250)); await row.getByRole("button", { name: "开始 / 继续上传", exact: true }).click();
-    await page.locator(".side-nav-menu").getByRole("link", { name: "首页库", exact: true }).click(); await expect.poll(() => fixture.task.status).toBe("completed");
+    await page.locator(".side-nav-menu").getByRole("link", { name: "高光时刻", exact: true }).click(); await expect.poll(() => fixture.task.status).toBe("completed");
     await page.locator(".side-nav-menu").getByRole("link", { name: "任务列表", exact: true }).click(); await expect(row).toContainText("视频已登记"); await expect(row.getByRole("link", { name: "播放视频" })).toHaveAttribute("href", "/videos/uploaded");
     await row.getByRole("button", { name: "查看详情", exact: true }).click(); const dialog = page.getByRole("dialog", { name: "任务详情", exact: true }); await expect(dialog.getByLabel("公共地址", { exact: true })).toHaveValue("https://media.invalid/onlineVideo/travel/demo.webm"); await expect(dialog).toContainText("100%");
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("clipboard fixture denied"); } } }));

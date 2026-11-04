@@ -1,0 +1,36 @@
+.library-blessing-effect { --blessing-cyan: #a7efff; --blessing-gold: #ffd68d; position: fixed; inset: 0; width: 100%; height: 100dvh; z-index: 120; overflow: hidden; isolation: isolate; pointer-events: none; color: #f7fbff; background: radial-gradient(ellipse at 50% 45%, rgba(20, 75, 99, .45), transparent 68%), rgba(3, 10, 22, .6); animation: library-blessing-curtain var(--blessing-duration) linear both; }
+.library-blessing-meteors { position: absolute; inset: 0; overflow: hidden; }
+.library-blessing-meteor { position: absolute; width: 0; height: 0; opacity: 0; animation: library-blessing-meteor var(--meteor-duration) linear var(--meteor-delay) 3 both; }
+.library-blessing-meteor i { position: absolute; left: 0; top: -1px; width: clamp(90px, 18vw, 230px); height: 2px; transform: rotate(var(--meteor-angle)); transform-origin: left center; border-radius: 50%; background: linear-gradient(90deg, #fff, var(--meteor-color) 15%, transparent); filter: drop-shadow(0 0 5px var(--meteor-color)); }
+.library-blessing-meteor i::before { content: ""; position: absolute; left: -2px; top: -1px; width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 0 0 9px 2px var(--meteor-color); }
+.library-blessing-center { position: absolute; top: 50%; left: 50%; width: max-content; max-width: calc(100% - 24px); transform: translate(-50%, -50%); text-align: center; }
+.library-blessing-word { position: relative; margin: 0; isolation: isolate; white-space: nowrap; font-family: "STKaiti", "KaiTi", "FangSong", serif; font-size: min(clamp(2.75rem, 10vw, 8rem), calc((100vw - 48px) / var(--blessing-length) / 1.25)); font-weight: 900; font-style: italic; line-height: 1.4; letter-spacing: .06em; animation: library-blessing-word 4200ms cubic-bezier(.16, 1, .3, 1) both; }
+.library-blessing-lettering { display: inline-block; }
+.library-blessing-letter { display: inline-block; color: #fff1be; background: linear-gradient(155deg, #fff 10%, #fff0b5 35%, #ffc97b 62%, #b0efff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .5px rgba(255, 246, 215, .65); filter: drop-shadow(1px 2px 0 #195a76) drop-shadow(0 0 12px rgba(109, 226, 255, .45)); animation: library-blessing-letter 780ms cubic-bezier(.18, .9, .2, 1.25) calc(var(--letter-index) * 45ms) both; }
+.library-blessing-echo { position: absolute; inset: 0; z-index: -1; -webkit-text-stroke: 1px currentColor; }
+.library-blessing-echo.cyan { color: #164a68; transform: translate(4px, 5px); text-shadow: 0 0 30px rgba(87, 217, 255, .65); }
+.library-blessing-echo.gold { color: #a85839; transform: translate(-2px, -2px); opacity: .6; }
+.library-blessing-caption { position: absolute; top: 100%; left: 50%; width: max-content; max-width: 90vw; margin-top: 10px; transform: translateX(-50%); font-size: clamp(11px, 2.5vw, 14px); letter-spacing: .15em; color: #d2edf5; animation: library-blessing-caption 4200ms ease both; }
+.library-blessing-explosion { position: absolute; inset: 0; pointer-events: none; }
+.library-blessing-ring { position: absolute; left: 50%; top: 50%; width: 26vmin; height: 26vmin; margin: -13vmin; border: 1px solid var(--blessing-gold); border-radius: 50%; box-shadow: 0 0 25px rgba(255, 214, 141, .25), inset 0 0 25px rgba(167, 239, 255, .18); animation: library-blessing-ring 1100ms ease-out both; }
+.library-blessing-ring.secondary { border-color: var(--blessing-cyan); animation-delay: 160ms; }
+.library-blessing-ray { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: var(--ray-color); box-shadow: 0 0 10px var(--ray-color); animation: library-blessing-ray 1250ms cubic-bezier(.15, .8, .3, 1) var(--ray-delay) both; }
+.library-blessing-ray::before, .library-blessing-ray::after { content: ""; position: absolute; top: 1px; left: -6px; width: 16px; height: 2px; border-radius: 50%; background: var(--ray-color); }
+.library-blessing-ray::after { transform: rotate(90deg); }
+.library-blessing-effect .library-blessing-close { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 10px; border: 1px solid rgba(198, 235, 247, .35); border-radius: 50%; color: #e9faff; background: rgba(7, 27, 45, .55); box-shadow: none; pointer-events: auto; }
+.library-blessing-close svg { width: 22px; height: 22px; }
+.library-blessing-close:focus-visible { outline: 2px solid #b4eeff; outline-offset: 3px; }
+body:has(.library-blessing-effect) .space-meteors { visibility: hidden !important; }
+body:has(.library-blessing-effect) .space-meteors .space-meteor { animation-play-state: paused !important; }
+.library-blessing-effect[data-motion="false"], .library-blessing-effect[data-motion="false"] :is(.library-blessing-word, .library-blessing-letter, .library-blessing-caption) { animation: none; }
+@keyframes library-blessing-curtain { 0% { opacity: 0; } 4%, 88% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes library-blessing-meteor { 0% { opacity: 0; transform: translate3d(0, 0, 0); } 7%, 72% { opacity: .95; } 100% { opacity: 0; transform: translate3d(var(--meteor-dx), var(--meteor-dy), 0); } }
+@keyframes library-blessing-word { 0% { opacity: 0; transform: scale(.18) rotate(-12deg); filter: blur(9px); } 10% { opacity: 1; transform: scale(1.16) rotate(3deg); filter: blur(0); } 18% { transform: scale(.97) rotate(-1deg); } 25%, 84% { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); } 100% { opacity: 0; transform: scale(1.08); filter: blur(3px); } }
+@keyframes library-blessing-letter { 0% { opacity: 0; transform: translateY(22px) scale(.3) rotate(var(--letter-tilt)); } 65% { opacity: 1; transform: translateY(-5px) scale(1.08) rotate(0); } 100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); } }
+@keyframes library-blessing-caption { 0%, 12% { opacity: 0; } 28%, 84% { opacity: .85; } 100% { opacity: 0; } }
+@keyframes library-blessing-ring { 0% { opacity: .8; transform: scale(.15); } 100% { opacity: 0; transform: scale(2.8); } }
+@keyframes library-blessing-ray { 0% { opacity: 0; transform: translate(0, 0) scale(.2); } 18% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--ray-x), var(--ray-y)) rotate(var(--ray-angle)) scale(.1); } }
+@media (prefers-reduced-motion: reduce) {
+  .library-blessing-effect, .library-blessing-effect :is(.library-blessing-word, .library-blessing-letter, .library-blessing-caption) { animation: none !important; }
+  .library-blessing-meteors, .library-blessing-explosion { display: none; }
+}

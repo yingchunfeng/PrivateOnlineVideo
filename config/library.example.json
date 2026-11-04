@@ -1,0 +1,13 @@
+{
+  "mediaBaseUrl": "https://media.example.com",
+  "objectPrefix": "onlineVideo/",
+  "categories": [
+    {
+      "id": "default",
+      "name": "未分类",
+      "tags": [],
+      "enabled": true
+    }
+  ],
+  "tagDefinitions": []
+}

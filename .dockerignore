@@ -42,3 +42,13 @@ apps/web/qa
 apps/web/HANDOFF.md
 apps/web/README.md
 packages/shared/tsconfig.tsbuildinfo
+apps/web/test/stage2-real-oss.test.ts
+apps/web/test/output
+apps/web/test/reports
+apps/web/test/artifacts
+apps/web/test/screenshots
+**/coverage
+**/.nyc_output
+**/blob-report
+**/playwright-report
+**/test-results

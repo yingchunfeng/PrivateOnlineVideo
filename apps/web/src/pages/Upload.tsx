@@ -246,7 +246,7 @@ export function LegacyUploadPage() {
 
           {/* 表单数据统一使用上方可见字段。 */}
           <div style={{ display: "none" }}>
-            <small>分类与标签来自视频库配置。</small>
+            <small>分类与标签来自高光时刻配置。</small>
           </div>
           {organizations.busy && <Loading />}
           {organizations.error !== undefined && <ErrorNotice error={organizations.error} retry={organizations.reload} />}

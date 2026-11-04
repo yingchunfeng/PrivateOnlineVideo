@@ -15,7 +15,7 @@ const localTime = (value: string | number) => {
 };
 interface Draft { id?: string; version?: number; name: string; expiresAt: string; permissions: GuestPermission[] }
 const permissionHint: Record<GuestPermission, string> = {
-  library: "查看共享视频库及播放", upload: "上传、导入及完成自己的任务", pages: "仅个人外观与动态星空", tasks: "仅查看和操作自己的上传任务",
+  library: "查看共享高光时刻及播放", upload: "上传、导入及完成自己的任务", pages: "仅个人外观与动态星空", tasks: "仅查看和操作自己的上传任务",
   configuration: "管理共享分类与标签", video_edit: "标题、分类、标签、封面及时长补采", video_delete: "仅删除数据库记录，不删除 OSS 内容"
 };
 
@@ -47,7 +47,7 @@ export function GuestsPage() {
     if (!draft.name.trim()) { setError(new Error("请输入访客名称")); return; }
     if (Date.parse(expiresAt) <= Date.now() + clockOffset.current) { setError(new Error("到期时间必须晚于服务器当前时间")); return; }
     if (!draft.permissions.some(permission => pages.includes(permission))) { setError(new Error("请至少勾选一个可访问页面")); return; }
-    if (draft.permissions.some(permission => permission === "video_edit" || permission === "video_delete") && !draft.permissions.includes("library")) { setError(new Error("视频编辑或删除权限需要同时勾选首页库")); return; }
+    if (draft.permissions.some(permission => permission === "video_edit" || permission === "video_delete") && !draft.permissions.includes("library")) { setError(new Error("视频编辑或删除权限需要同时勾选高光时刻")); return; }
     const input: CreateGuestRequest = { name: draft.name.trim(), expiresAt, permissions: draft.permissions };
     saving.current = true; setBusy(true);
     try {
@@ -97,7 +97,7 @@ export function GuestsPage() {
       <form id="guest-editor-form" className="management-form guest-form" onSubmit={event => { event.preventDefault(); void save(); }}><label className="management-field">访客名称<input required maxLength={40} value={draft.name} disabled={busy} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder="例如：周末观影" /></label><div className="guest-time-fields"><label className="management-field">有效期快捷选项<select value="" disabled={busy} onChange={event => { if (event.target.value) setDraft({ ...draft, expiresAt: localTime(Date.now() + clockOffset.current + Number(event.target.value) * 3_600_000) }); }}><option value="">选择有效期</option><option value="1">1 小时后</option><option value="24">24 小时后</option><option value="168">7 天后</option></select></label><label className="management-field">到期时间<input type="datetime-local" required value={draft.expiresAt} disabled={busy} onChange={event => setDraft({ ...draft, expiresAt: event.target.value })} /><small>当前浏览器时区：{timezone}；最终以服务端校验为准。</small></label></div>
         <fieldset className="guest-permissions" disabled={busy}><legend>可访问页面</legend><div className="guest-permission-grid">{GUEST_PERMISSIONS.filter(permission => pages.includes(permission)).map(permission => <label key={permission}><input type="checkbox" checked={draft.permissions.includes(permission)} onChange={event => setDraft({ ...draft, permissions: event.target.checked ? [...draft.permissions, permission] : draft.permissions.filter(value => value !== permission) })} /><span>{GUEST_PERMISSION_LABELS[permission]}<small>{permissionHint[permission]}</small></span></label>)}</div></fieldset>
         <fieldset className="guest-permissions" disabled={busy}><legend>额外视频操作（默认不授予）</legend><div className="guest-permission-grid">{GUEST_PERMISSIONS.filter(permission => !pages.includes(permission)).map(permission => <label key={permission}><input type="checkbox" checked={draft.permissions.includes(permission)} onChange={event => setDraft({ ...draft, permissions: event.target.checked ? [...draft.permissions, permission] : draft.permissions.filter(value => value !== permission) })} /><span>{GUEST_PERMISSION_LABELS[permission]}<small>{permissionHint[permission]}</small></span></label>)}</div></fieldset>
-        <div className="notice">系统设置、账户安全、访客管理和全站默认外观始终仅管理员可用。上传内容进入共享视频库；任务列表仅显示访客自己的任务。失效凭证不能恢复，请新增访客。</div>
+        <div className="notice">系统设置、账户安全、访客管理和全站默认外观始终仅管理员可用。上传内容进入共享高光时刻；任务列表仅显示访客自己的任务。失效凭证不能恢复，请新增访客。</div>
         {notice && <div className="notice" role="status">{notice}</div>}{error !== undefined && <ErrorNotice error={error} />}{error instanceof ApiError && error.code === "GUEST_VERSION_CONFLICT" && <button type="button" className="secondary" disabled={busy} onClick={() => void refreshVersion()}>使用最新版本重试</button>}
       </form>
     </Modal>}

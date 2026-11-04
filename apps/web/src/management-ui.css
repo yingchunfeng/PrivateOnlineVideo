@@ -11,7 +11,7 @@
 .management-table tbody tr:last-child td { border-bottom: 0; }
 .management-table td > small { margin-top: 4px; }
 .management-table .archived { color: var(--text-secondary); }
-.management-tag, .management-state { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-high); color: var(--text-secondary); font-size: .78rem; line-height: 1.6; overflow-wrap: anywhere; }
+.management-tag, .management-state { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-high); color: var(--text-secondary); font-size: .78rem; line-height: 1.6; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .management-state.active { color: var(--success); background: var(--success-surface); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
 .management-form { display: grid; gap: 18px; min-width: 0; }
 .management-field { display: grid; gap: 8px; min-width: 0; }
@@ -33,6 +33,7 @@
 @media (max-width: 600px) {
   .management-toolbar { align-items: stretch; }
   .management-table :is(th, td) { padding: 12px; }
+  .management-table .management-actions :is(button, .button) { padding: 8px 10px; font-size: .8rem; min-height: 38px; white-space: normal; line-height: 1.35; }
   .management-modal { max-height: calc(100dvh - 16px); border-radius: 12px; }
   .management-modal-header { padding: 16px; gap: 10px; }
   .management-modal-body { padding: 16px; }

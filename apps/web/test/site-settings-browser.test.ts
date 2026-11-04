@@ -91,7 +91,7 @@ test("页面管理与上传上限：正式入口、草稿、冲突、新登录�
       assert.equal(writes.length, before + 1); releaseSave!(); await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
       await page.locator(".side-logout-btn").click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
-      await expect(page.locator("html")).toHaveAttribute("data-theme", "light"); await page.getByLabel("密码", { exact: true }).fill("isolated-fixture-password"); await page.getByRole("button", { name: "进入视频库", exact: true }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light"); await page.getByLabel("密码", { exact: true }).fill("isolated-fixture-password"); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark"); assert.equal(await page.evaluate(() => localStorage.getItem("ov.theme.v1")), "dark");
       await page.reload(); await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     });

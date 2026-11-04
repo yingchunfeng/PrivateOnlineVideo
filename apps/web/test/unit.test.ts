@@ -6,6 +6,9 @@ import type { UploadTask, VideoDetail } from "@online-video/shared";
 import { presentUsage } from "../src/usage";
 import { authApi } from "../src/api/auth";
 import type { ApplicationUsage } from "@online-video/shared";
+import { buildLibraryFeed, encouragementMessages, selectEncouragementMessages } from "../src/pages/library-feed";
+import { BLESSING_DURATION_MS, BLESSING_REVEAL_MS, blessingWords, createBlessingBurst } from "../src/pages/library-blessing";
+import { detectSpaceDevice } from "../src/space-meteor-settings";
 
 test("同源 API、Cookie、CSRF 与原始分片请求使用契约头", async () => {
   const calls: { input: string; init?: RequestInit }[] = [];
@@ -134,4 +137,67 @@ test("OSS 直连未知字节不转成 0 或代理额度，签发次数独立", (
   assert.deepEqual(presentUsage(usage), { kind: "oss_unknown" });
   assert.throws(() => presentUsage({ ...usage, transferredBytes: 0 } as unknown as ApplicationUsage), ApiError);
   assert.throws(() => presentUsage({ ...usage, cloudStatisticsAt: usage.periodStart } as unknown as ApplicationUsage), ApiError);
+});
+
+test("寄语池固定30条，每次无放回抽取3条，不修改文案池且所有文案都可被抽到", () => {
+  assert.equal(encouragementMessages.length, 30);
+  assert.equal(new Set(encouragementMessages.map(message => message.id)).size, 30);
+  assert.equal(new Set(encouragementMessages.map(message => message.text)).size, 30);
+  const before = JSON.stringify(encouragementMessages);
+  for (let index = 0; index < 30; index++) {
+    let calls = 0;
+    const selected = selectEncouragementMessages(() => { calls++; return (index + .5) / 30; });
+    assert.equal(calls, 3);
+    assert.equal(selected.length, 3);
+    assert.equal(new Set(selected.map(message => message.id)).size, 3);
+    assert.equal(selected[0], encouragementMessages[index]);
+    assert.ok(selected.every(message => encouragementMessages.includes(message)));
+  }
+  assert.deepEqual(selectEncouragementMessages(() => 0).map(message => message.id), ["encouragement-1", "encouragement-2", "encouragement-3"]);
+  assert.deepEqual(selectEncouragementMessages(() => .999999).map(message => message.id), ["encouragement-30", "encouragement-1", "encouragement-2"]);
+  assert.equal(JSON.stringify(encouragementMessages), before);
+});
+
+test("寄语是独立列表数据：首行仍为两个视频，追加不重复插卡、不改变视频数量或顺序", () => {
+  const videos = Array.from({ length: 14 }, (_, index) => ({ ...videoFixture(), id: `video-${index}` }));
+  const selected = selectEncouragementMessages(() => 0);
+  const first = buildLibraryFeed(videos.slice(0, 12), selected);
+  const full = buildLibraryFeed(videos, selected);
+  assert.deepEqual(full.slice(0, 3).map(entry => entry.kind), ["video", "video", "encouragement"]);
+  assert.equal(full.length, videos.length + 1);
+  assert.equal(full.filter(entry => entry.kind === "encouragement").length, 1);
+  assert.equal(full.find(entry => entry.kind === "encouragement")?.messages, selected);
+  assert.deepEqual(full.filter(entry => entry.kind === "video").map(entry => entry.video), videos);
+  assert.equal(full.filter(entry => entry.kind === "video" && entry.roomy).length, 2);
+  assert.deepEqual(full.slice(0, first.length).map(entry => entry.id), first.map(entry => entry.id));
+  assert.equal(new Set(full.map(entry => entry.id)).size, full.length);
+  for (const count of [0, 1, 2, 3]) assert.equal(buildLibraryFeed(videos.slice(0, count), selected).length, count);
+});
+
+test("祝福彩蛋包含10条非空且不重复的祝福语，全部可随机触发；静态模式不创建流星和炸裂粒子", () => {
+  assert.equal(blessingWords.length, 10);
+  assert.equal(new Set(blessingWords).size, 10);
+  assert.ok(blessingWords.every(word => word.length > 0 && word === word.trim()));
+  for (let index = 0; index < 10; index++) {
+    const burst = createBlessingBurst(detectSpaceDevice(375), 375, 812, false, () => (index + .5) / 10);
+    assert.equal(burst.word, blessingWords[index]);
+    assert.deepEqual(burst.meteors, []); assert.deepEqual(burst.rays, []);
+  }
+  assert.ok(BLESSING_REVEAL_MS > 0 && BLESSING_REVEAL_MS + 4200 < BLESSING_DURATION_MS);
+});
+
+test("祝福彩蛋粒子受设备上限约束，首颗流星立即进入视口，随机异常有安全回退", () => {
+  for (const [width, cores, memory, count] of [[375, 8, 8, 8], [1440, 8, 8, 18], [1024, 2, 2, 16]] as const) {
+    const device = detectSpaceDevice(width, cores, memory); const before = JSON.stringify(device);
+    for (const value of [0, .999999, NaN, -1, Infinity]) {
+      const burst = createBlessingBurst(device, width, 900, true, () => value);
+      assert.ok(blessingWords.includes(burst.word));
+      assert.equal(burst.meteors.length, count); assert.ok(burst.meteors.length <= device.hardLimit);
+      const first = burst.meteors[0]!; assert.equal(first.delay, 0); assert.ok(first.x > 0 && first.x < width && first.y > 0 && first.y < 900);
+      assert.ok(burst.meteors.every(meteor => [meteor.x, meteor.y, meteor.dx, meteor.dy, meteor.angle, meteor.duration, meteor.delay].every(Number.isFinite)));
+      assert.ok(burst.meteors.every(meteor => meteor.duration * 3 + meteor.delay < BLESSING_DURATION_MS));
+      assert.ok(burst.rays.every(ray => [ray.x, ray.y, ray.angle, ray.delay].every(Number.isFinite)));
+    }
+    assert.equal(JSON.stringify(device), before, "不得修改用户的设备或流星雨配置");
+  }
 });

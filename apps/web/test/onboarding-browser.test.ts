@@ -101,7 +101,7 @@ test("首次安装网页：独立API替身验证安装门禁、密码登录、�
   });
   await t.test("完成后纯密码登录，再通过独立验证码开启邮箱验证", async () => {
     await page.getByRole("button", { name: "完成设置，前往登录", exact: true }).click(); await expect(page.getByRole("heading", { name: "安全登录", exact: true })).toBeVisible();
-    await expect(page.getByLabel(/^动态验证码/)).toHaveCount(0); await page.getByLabel("密码", { exact: true }).fill(password); await page.getByRole("button", { name: "进入视频库", exact: true }).click();
+    await expect(page.getByLabel(/^动态验证码/)).toHaveCount(0); await page.getByLabel("密码", { exact: true }).fill(password); await page.getByRole("button", { name: "进入高光时刻", exact: true }).click();
     await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible(); await page.goto(`${origin}/settings`);
     const form = page.getByRole("region", { name: "登录邮箱验证", exact: true }); await expect(form).toBeVisible(); await form.getByLabel("当前密码").fill(password); await form.getByLabel("接收登录验证码的邮箱").fill("owner@qq.com"); await form.getByRole("button", { name: "发送开启验证的验证码" }).click();
     await form.getByLabel("设置确认验证码", { exact: true }).fill("123456"); await page.screenshot({ path: resolve(evidence, "phone-email-verification.png"), fullPage: true });

@@ -1,10 +1,10 @@
-.page-settings-table { min-width: 760px; }
-.page-settings-table th:first-child { width: 160px; }
-.page-settings-table th:nth-child(2) { width: 140px; }
-.page-settings-table th:last-child { width: 150px; }
-.page-settings-table td { overflow-wrap: anywhere; }
+.page-settings-table { min-width: 0; width: 100%; table-layout: fixed; }
+.page-settings-table th:nth-child(1) { width: 28%; }
+.page-settings-table th:nth-child(2) { width: 44%; }
+.page-settings-table th:nth-child(3) { width: 28%; }
+.page-settings-table td { overflow-wrap: anywhere; min-width: 0; }
 .page-settings-table td > small { display: block; color: var(--text-secondary); line-height: 1.6; }
-.page-settings-table button { min-height: 44px; white-space: nowrap; }
+.page-settings-table button { min-height: 44px; white-space: normal; }
 .page-theme-options { display: flex; flex-wrap: wrap; gap: 20px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; }
 .page-theme-options legend { padding: 0 6px; color: var(--text-secondary); font-size: .85rem; }
 .page-theme-options label { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; }

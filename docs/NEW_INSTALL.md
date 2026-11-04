@@ -2,6 +2,8 @@
 
 适用范围：创建一个**独立的新 SQLite 数据库**，体验首次安装。旧数据库、原账号、原 `.env` 和旧配置继续保留，不在原库上执行完整 SQL。
 
+本文以本地 PowerShell 开发运行为例，先安装项目要求的 Node.js `>=22.21.1 <23`、npm `10.x`，并在项目根目录执行 `npm ci`。Linux 服务器使用[Docker/1Panel 指南](DEPLOY_1PANEL.md)：其一次性初始化命令会创建数据库文件并执行同一份完整 SQL，**不要先手动创建空 `.db` 再运行该命令**。已部署环境更新不再初始化。
+
 ## 1. 新建空库并执行一份 SQL
 
 完整文件：[`sql/NEW_INSTALL_FULL.sql`](sql/NEW_INSTALL_FULL.sql)。
@@ -35,7 +37,15 @@ npm run dev:setup -w @online-video/api -- --database E:/onlineVideo/.local/data/
 - 必须已经执行完整 SQL。缺库、旧结构、密钥缺失/不匹配、残留初始化资料会报错，不回退为默认密码。
 - 开发时默认监听 `127.0.0.1:3000`，不要将本地开发 HTTP 服务直接暴露到公网。
 
-完成新库设置后，日常可直接使用 `npm run dev:api`：它现在读取 `config/deployment.json` 中的数据库与密钥路径，不加载 `.env`。当前默认指向 `new-install.db` 及其已有主密钥。若是第一次全新安装且没有密钥，显式 `--database` 命令仍会创建伴随密钥；使用 JSON 启动时应先省略 `authKeyFile`。切库和共用主密钥见[数据库切换说明](DATABASE_SWITCHING.md)。
+完成新库设置后，日常可使用 `npm run dev:api`；它读取 `config/deployment.json` 中的数据库与密钥路径，不加载 `.env`。首次创建本机配置时先检查，已有文件不覆盖：
+
+```powershell
+if (-not (Test-Path -LiteralPath 'config/deployment.json')) {
+    Copy-Item -LiteralPath 'config/deployment.example.json' -Destination 'config/deployment.json'
+}
+```
+
+核对 JSON 的 `databasePath` 与上面显式选择的库一致。模板仅指定 `.local/data/new-install.db`，省略 `authKeyFile` 时使用其伴随密钥；显式填写该字段时必须是目标库匹配的已有密钥。切库和共用主密钥见[数据库切换说明](DATABASE_SWITCHING.md)。
 
 构建后的对应入口：
 
@@ -44,7 +54,7 @@ npm run build
 npm run start:setup -w @online-video/api -- --database E:/onlineVideo/.local/data/new-install.db
 ```
 
-这不等于已完成服务器部署。生产环境仍需正确设置 `NODE_ENV=production`、可信 HTTPS `AUTH_ALLOWED_ORIGINS`、监听地址、TLS 反向代理和持久化目录。基础设施配置不放在尚未可访问的首次网页里；正式打包/服务器说明另行交付。
+这不等于已完成服务器部署。生产环境仍需正确设置 `NODE_ENV=production`、可信 HTTPS `AUTH_ALLOWED_ORIGINS`、监听地址、TLS 反向代理和持久化目录。基础设施配置不放在尚未可访问的首次网页里；完整打包、首次部署、更新和备份步骤见[服务器部署指南](DEPLOY_1PANEL.md)。
 
 ## 3. 打开网页并完成初始化
 
@@ -119,17 +129,15 @@ npm run dev:web
 
 限制这些目录和文件的访问权限（Windows 同时检查 ACL）。不要放进 Git、通用发布包或前端静态目录。SQLite 在线备份必须保证一致性，不能只复制正在使用的 `.db` 主文件而忽略 WAL。不能删除主密钥后重新生成来解密旧配置。
 
-本轮没有为新密码账号增加公开“忘记密码”或匿名重置入口；请妥善保存新密码及配套资料。旧账号原有 TOTP/恢复流程保持不变。
+新密码账号没有公开“忘记密码”或匿名重置入口；请妥善保存新密码及配套资料。旧账号原有 TOTP/恢复流程保持不变。
 
 ## 6. 验证边界
 
-主线程 `npm run check` 已通过：API 154 项、前端默认 32 项测试，以及全仓类型检查和构建；另有公共媒体 3 项单元测试通过。新完整 SQL 与迁移后的最终结构、种子和账本一致性测试通过，重复执行/非空目标被拒绝。
+仓库提供完整 SQL 与迁移后结构、种子和账本的一致性测试，以及 SQLite/HTTP 初始化、默认密码限权、强制改密、配置脱敏、限流、邮箱验证开关和重启恢复回归。普通测试使用隔离库、替身或受控协议服务，不表示新填的实际凭据已经通过实云验收；也不以旧版本的测试数量代表本次运行结果。
 
-主线程独立浏览器复验：`test:e2e:setup` 5 项、原默认 `test:e2e` 14 项、生产入口检查 1 项全部通过。新增真 HTTP/SQLite 的[重启后系统设置截图](../.local/tests/onboarding-http-browser-373a7e30-b07c-410a-9d21-e1c38c08d580/phone-settings-after-restart.png)已检查，375px 桌面手机仿真无横向溢出；不作为安卓真机证据。修复了旧测试替身未提供安装状态的问题，未降低安装状态校验。
+可按[本地运行说明](LOCAL_DEVELOPMENT.md#验证)执行 `npm run check`，再运行 `npm run test:e2e:setup -w @online-video/web` 验证网页安装流程；手机尺寸仿真不能代替安卓真机。
 
-自动化覆盖完整 SQL 导入、真实 SQLite/HTTP 初始化、默认密码权限限制、改密、配置保存与脱敏、测试限流、邮箱验证开关及重启恢复。云存储与邮件使用隔离替身或受控 SDK 协议测试，不代表你新填的实际凭据已经通过实云验收。
-
-你自行切换新库后，还需通过页面测试自己的 OSS/SMTP，并实际上传一个明确的小样例、检查邮件收件箱。安卓真机、大文件和服务器部署继续单列，不因本轮通过而标为完成。
+新库设置完成后，还需在页面测试自己的 OSS/SMTP，并实际上传一个明确的小样例，核对登记、封面、播放和邮件实际收件。服务器已正常使用的用户确认只适用于相应环境；每次部署或更新后的持久化、安卓真机和大文件仍单独验收。
 
 ## 7. OSS 已保存但测试失败
 

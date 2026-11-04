@@ -16,7 +16,9 @@ test("完整安装 SQL 与最新迁移最终结构/种子/ledger 一致，且无
     assert.deepEqual(structure(imported), structure(expected));
     assert.deepEqual(imported.prepare("SELECT version,checksum FROM schema_migrations ORDER BY version").all(), migrationManifest().map(row => ({ version: row.version, checksum: row.checksum })));
     assert.equal(imported.pragma("integrity_check", { simple: true }), "ok"); assert.deepEqual(imported.pragma("foreign_key_check"), []);
-    for (const table of ["users", "installation_state", "installation_settings", "login_sessions", "smtp_provider_configs", "videos"])
+    const tables = imported.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[];
+    assert.equal(tables.length, 41);
+    for (const { name: table } of tables.filter(row => !["schema_migrations", "smtp_provider_types"].includes(row.name)))
       assert.equal((imported.prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n, 0);
     assert.equal((imported.prepare("SELECT count(*) n FROM smtp_provider_types").get() as { n: number }).n, 2);
     assert.throws(() => imported.exec(shipped)); if (imported.inTransaction) imported.exec("ROLLBACK");

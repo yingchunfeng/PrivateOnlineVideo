@@ -2,9 +2,21 @@
 
 面向个人使用的视频管理网站，支持桌面及手机浏览器。通过一个管理员账号管理视频、分类、标签、上传任务和系统配置，可按期限授权受限访客；不提供公众注册或通用多租户隔离。
 
-**默认启动方式已经改为数据库配置模式：** 执行 `npm run dev:api`，后端从 `config/deployment.json` 选择数据库和应用主密钥，再从数据库读取 OSS、SMTP 等业务配置，不加载项目 `.env`。
+核心功能已完成开发，当前以维护、部署和专项验收为主。首页视频管理入口名为“高光时刻”；产品、仓库和技术路由名称不因此变更。
+
+**默认启动方式为数据库配置模式：** 从 `config/deployment.example.json` 创建本机专用 `config/deployment.json` 后，执行 `npm run dev:api`；后端按该文件选择数据库和应用主密钥，再从数据库读取 OSS、SMTP 等业务配置，不加载项目 `.env`。
 
 > 当前采用公共读媒体直连方案：站内管理需要登录，但视频的公共 HTTPS 地址本身无需登录。请勿把公共媒体地址当作私有访问控制。
+
+## 阅读入口
+
+| 目标 | 操作入口 |
+| --- | --- |
+| 本地首次运行 | 下文[首次安装](#首次安装)，只在新空库执行一份完整 SQL |
+| Linux 服务器首次部署 | [Docker 与 1Panel 指南](docs/DEPLOY_1PANEL.md)，在服务器构建 API/Web 镜像 |
+| 已部署环境更新 | [日常更新](docs/DEPLOY_1PANEL.md#9-日常更新不再初始化数据库)，先备份，不重新建库或生成密钥 |
+| 切换数据库 | [数据库切换说明](docs/DATABASE_SWITCHING.md)，停服务后修改启动配置 |
+| 接口、结构与前端维护 | 文末[维护文档](#维护文档) |
 
 ## 项目功能
 
@@ -12,7 +24,7 @@
 | --- | --- |
 | 首次安装 | 完整新库 SQL、一次性安装码、初始密码限权、强制改密、配置向导及中断后继续设置 |
 | 账号安全 | 默认密码登录；可选邮箱验证码登录、密码修改和邮箱验证开关；保留旧 TOTP 账号兼容入口 |
-| 视频库 | 固定尺寸卡片、单行标题、分类/标签搜索筛选、弹窗编辑、缺失时长补采及仅删除数据库记录 |
+| 高光时刻 | 固定尺寸卡片、单行标题、分类/标签搜索筛选、弹窗编辑、缺失时长补采及仅删除数据库记录 |
 | 上传任务 | 多文件队列、分片上传、SHA-256 校验、暂停/续传、任务历史、失败后的完成确认与幂等恢复 |
 | 封面与播放 | 浏览器提取封面、预览及上传；封面失败可单独补存；视频通过 OSS/媒体域名直接播放 |
 | 分类与标签 | 网页配置、稳定 ID、首页联动和跨标签页同步；分类调整不自动搬移 OSS 对象 |
@@ -21,7 +33,7 @@
 | 系统设置 | 网页配置 OSS、QQ/163 SMTP 和单文件上传上限，支持只读 OSS 检查和主动发送测试邮件，敏感字段加密保存 |
 | 数据库切换 | 修改启动 JSON 并重启，切换整套账号、配置和业务数据；独立新库可显式共用已有 `.auth.key` |
 
-播放能力取决于浏览器支持的容器和编码，本项目不承诺自动转码或所有视频格式均可播放。安卓真机、大文件和完整服务器部署仍需分别验证。
+播放能力取决于浏览器支持的容器和编码，本项目不承诺自动转码或所有视频格式均可播放。已有服务器正常使用的用户确认；安卓真机、大文件和新版本上线后的专项验证仍需分别记录。
 
 ## 管理页面与访客
 
@@ -106,6 +118,9 @@ config/deployment.json
 - 访客：独立临时密码、页面及视频操作授权、到期/重置/撤销后全会话失效；共享视频库，上传任务按访客隔离。OSS 公共直链不随站内凭证失效。
 - 存储：阿里云 OSS（ali-oss），支持服务端直接 AK 或可选 ARN/STS；Mock 仅用于显式演示及隔离测试。
 - 验证：Node.js Test Runner、Playwright。
+- 部署：Docker 多阶段构建、Docker Compose、Nginx 静态资源与 API 代理，可复用已有 1Panel/OpenResty 管理域名和 TLS。
+
+具体依赖版本以各 workspace 的 `package.json` 与根 `package-lock.json` 为准；升级依赖时应重新验证原生 SQLite 模块与浏览器行为。
 
 ## 项目结构
 
@@ -119,7 +134,11 @@ apps/
 packages/
   shared/               前后端共享 DTO 和错误定义
 config/
-  deployment.json       默认启动的数据库与主密钥路径
+  deployment.example.json  可公开的本地启动配置模板
+  deployment.json       本机实际数据库与主密钥路径，不应公开
+deploy/                 容器部署模板、初始化命令与 Nginx 配置
+Dockerfile              Linux 多阶段构建，分别生成 API/Web 镜像
+compose.yaml            服务、健康检查和持久化挂载
 docs/
   sql/NEW_INSTALL_FULL.sql  新空库完整 SQL
   NEW_INSTALL.md        首次安装步骤
@@ -152,7 +171,16 @@ npm run build -w @online-video/shared
 
 ### 3. 选择数据库与密钥
 
-首次安装、尚无主密钥时，将 `config/deployment.json` 配置为：
+首次安装先创建本机配置；如果文件已存在则保留，检查后按实际情况编辑，不覆盖已有配置：
+
+```powershell
+if (-not (Test-Path -LiteralPath 'config/deployment.json')) {
+    Copy-Item -LiteralPath 'config/deployment.example.json' -Destination 'config/deployment.json'
+}
+Get-Content -LiteralPath 'config/deployment.json' -Encoding UTF8
+```
+
+尚无主密钥的新环境应使用：
 
 ```json
 {
@@ -160,7 +188,7 @@ npm run build -w @online-video/shared
 }
 ```
 
-**仓库中的默认 JSON 带有 `authKeyFile` 示例，首次没有密钥时需要省略该字段；已有环境不要修改原密钥文件。** 新空库首次启动会创建配套主密钥和安装码。若要共用一份已有主密钥，则显式填写它的 `authKeyFile` 路径。
+模板故意省略 `authKeyFile`，新空库首次启动会创建配套主密钥和安装码。若已有配置带有 `authKeyFile`，它必须指向目标库原来匹配的已有密钥；不要为套用模板而修改原密钥文件。若要共用一份已有主密钥，则显式填写它的 `authKeyFile` 路径。
 
 ### 4. 启动后端和前端
 
@@ -241,7 +269,7 @@ npm run dev:legacy -w @online-video/api
 npm run start:legacy -w @online-video/api
 ```
 
-旧账号初始化、恢复和邮件 CLI 仍属于旧流程，不用于修复新的网页配置库。原 VS Code F5 配置仍指向旧入口；新方式使用终端命令或“启动 API”任务。
+旧账号初始化、恢复和邮件 CLI 仍属于旧流程，不用于修复新的网页配置库。个人编辑器配置可能仍指向旧入口，应核对启动目标；新方式以本文终端命令为准。
 
 显式指定新部署数据库的命令也继续兼容；它不合并读取默认启动 JSON：
 
@@ -250,6 +278,26 @@ npm run start:setup -w @online-video/api -- --database ".local/data/new-install.
 ```
 
 未指定 `--key-file` 时使用目标库的伴随主密钥；共用密钥或使用其他配置文件的写法见[数据库切换说明](docs/DATABASE_SWITCHING.md)。
+
+## 服务器部署与更新
+
+推荐在 Linux 服务器构建，不上传 Windows 的 `node_modules`。仓库已提供完整的 Dockerfile、Compose 和 Nginx 配置；已有 1Panel 时继续使用原 OpenResty 和证书，不另占宿主机 80/443。
+
+```text
+/opt/online-video/
+  source/      Git 源码，构建和运行 Compose 的位置
+  config/      deployment.json、compose.env，服务器专用配置
+  data/        SQLite、主密钥、安装码与配套业务配置
+  backups/     与源码分离的备份
+```
+
+- **首次部署**：准备外部配置和空数据目录 -> 构建 API/Web 镜像 -> 一次性执行 `deploy/init-db.mjs`，它只读取 `docs/sql/NEW_INSTALL_FULL.sql` -> 启动容器 -> 配置 HTTPS 反向代理 -> 完成网页安装。不要先手动创建一个空 `.db` 再运行初始化命令，该命令拒绝任何已存在的数据库文件。
+- **访问链路**：浏览器 HTTPS -> 1Panel/OpenResty -> Web 容器 -> API 容器。默认只发布 Web 的 `127.0.0.1:18080`，API 不直接暴露公网；视频播放单独使用公共媒体地址。
+- **参数含义**：`APP_ORIGIN` 是管理网站实际 HTTPS Origin，不是 OSS/媒体地址；`DATA_DIR` 和 `DEPLOY_CONFIG_FILE` 是宿主机路径。OSS 与 SMTP 凭据通过网页保存到数据库，不填进公开模板。
+- **普通更新**：确认发布内容已提交并推送 -> 保留旧镜像和一致性备份 -> `git pull --ff-only` -> 构建新镜像 -> `up` 替换本项目容器 -> 验证 health、登录和业务。拉取源码或 `restart` 不等于采用新镜像。
+- **涉及结构升级**：先暂停普通更新，核对当前数据库版本和目标迁移，备份后另行执行经确认的增量方案。v7 站点设置和 v8 访客表不能靠导入完整 SQL 给旧库补齐；应用不会启动时自动迁移。
+
+逐条可执行命令、host/bridge 代理方案、备份与回退步骤见[部署指南](docs/DEPLOY_1PANEL.md)。该指南中的已有服务器历史记录仅适用于原环境，新服务器使用通用示例并替换目录和域名。
 
 ## 常用命令
 
@@ -278,28 +326,28 @@ npm run start:setup -w @online-video/api -- --database ".local/data/new-install.
 - 备份数据库、匹配的 `.auth.key`、该库的 `.library.json` 和启动 JSON；未完成首次安装时，还需保留安装码。共享密钥必须与所有依赖它的数据库一并纳入备份计划。
 - SQLite 应停服务后复制，或使用一致性在线备份；不能只复制运行中的 `.db` 而忽略 WAL。
 - 主密钥丢失后不能通过生成新密钥解密旧配置。多个库共用主密钥会扩大密钥泄漏的影响范围。
-- 数据库、主密钥、真实 `.env`、账号资料、本地备份和验收产物不提交到 Git，也不作为前端静态文件发布。
+- 数据库、主密钥、真实 `.env`、本机配置、账号资料、本地备份和验收产物不应提交到 Git，也不能作为前端静态文件发布。对外配置应使用不含真实凭据的示例；`.gitignore` 不会自动解除已跟踪文件或清除历史中的内容，公开前按[仓库维护说明](docs/REPOSITORY_HYGIENE.md)核对。
 - 不在已有库重复导入完整 SQL，不通过改指纹绕过密钥检查，不因测试失败自动重置账号、切换 Mock 或扩大云端权限。
 
 ## 验证范围
 
 用户本机已确认新库上传和配置文件启动方式可用。数据库切换、共享主密钥、错误密钥拒绝、OSS 错误分类及上传恢复有隔离自动化回归覆盖；这些结果不替代其他环境的真实 OSS/SMTP 权限与送达测试。
 
-管理页面、站点设置、视频数据维护和受限访客功能已提供源码及隔离回归测试；本次 Git 提交不代表已部署、迁移正式库或完成安卓/大文件验收。
+管理页面、站点设置、视频数据维护和受限访客功能已提供源码及隔离回归测试。源码完成不代表运行中的服务器已经更新到同一版本，也不代表正式库已升级到 v8。
 
-安卓真机、大文件、更多容器/封面兼容性以及完整服务器部署不因本次配置优化而标记为通过。历史阶段记录和后续范围见[工作清单](docs/task/UNFINISHED_WORK.md)，具体操作以当前启动方式为准。
+已有 Docker/1Panel 部署和正常使用的用户确认，具体基线见[部署记录](docs/DEPLOY_1PANEL.md#0-本次部署记录与阅读入口)。安卓真机、大文件、更多容器/封面兼容性、按需 SMTP 实际收件以及每次更新后的持久化与业务检查仍应单独验收，不由 health 或桌面手机仿真推定通过。
 
-## 开发文档
+## 维护文档
 
 - [Docker 镜像部署与 1Panel 反向代理](docs/DEPLOY_1PANEL.md)
 - [新部署完整 SQL 与网页初始化](docs/NEW_INSTALL.md)
 - [数据库配置、切库与共享主密钥](docs/DATABASE_SWITCHING.md)
-- [当前未完成工作与已确认完成记录](docs/task/UNFINISHED_WORK.md)
 - [本地运行](docs/LOCAL_DEVELOPMENT.md)
-- [当前视频功能与验收记录](docs/task/SIMPLE_OSS_PLAN.md)
 - [当前 API 契约](docs/API_CONTRACT.md)
 - [账号与登录](docs/ACCOUNT.md)
 - [数据库与迁移](docs/DATABASE.md)
 - [QQ/163 邮箱配置](docs/SMTP_PROVIDERS.md)
 - [前端运行说明](apps/web/README.md)
-- [历史规划、交接与测试产物清理记录](docs/archive/README.md)
+- [仓库公开、敏感配置与本地产物维护](docs/REPOSITORY_HYGIENE.md)
+
+需求板、开发阶段计划、历史交接和本机测试报告不作为安装依赖或对外使用说明；本地保留的历史文档可能描述旧私有播放方案，当前行为以本页、接口契约和现行操作指南为准。

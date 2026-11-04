@@ -45,12 +45,12 @@
 
 2026-10-04 邮箱类型补充：`GET /api/auth/login/options` 与已登录的 `/api/auth/security` 增加公开 `emailProviders: [{code,name,domain}]`，仅列启用的 QQ/163 类型，不返回 SMTP 凭证或服务地址。绑定/修改邮箱只接受完整支持域名，类型停用后发码与确认均拒绝；错误码 `EMAIL_PROVIDER_UNSUPPORTED` 为 400。多类型配置及控制见 [QQ 与 163 邮箱支持](SMTP_PROVIDERS.md)。
 
-第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；详见[第二阶段契约](archive/STAGE2_API_CONTRACT.md)与[后端交接](archive/STAGE2_BACKEND_HANDOFF.md)。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
+第二阶段可编译契约已冻结于shared/core/contracts，新增API由完整入口装配并通过隔离HTTP/SQL验证；阶段契约与后端交接本地保留于 `docs/archive/STAGE2_API_CONTRACT.md`、`docs/archive/STAGE2_BACKEND_HANDOFF.md`。用户具体授权后正式库已一致性备份升级至版本2、本人账号保留；真实STS/OSS与生产未验，不将协议替身结果当实云。
 
 日期：2026-10-02
 
 性质：真实鉴权/SQLite组织、视频库、观看记录、分模式用量及媒体统一装配已实现，运行须显式资源配置与版本2库
-历史依据：原 PRD 和任务总看板已于 2026-10-30 按确认范围清理；当前功能见[项目说明](../README.md)，阶段交付结果保留在[第二阶段完成审计](archive/STAGE2_COMPLETION_AUDIT.md)。
+历史依据：原 PRD 和任务总看板已于 2026-10-30 按确认范围清理；当前功能见[项目说明](../README.md)，阶段交付结果本地保留于 `docs/archive/STAGE2_COMPLETION_AUDIT.md`。
 
 ## 1. 基本约定
 
@@ -110,7 +110,7 @@
 
 CORE-03 已固定本地命令 `account:init` 和 `account:recover`：初次创建只允许新库，恢复要求当前密码加单次恢复码；密码/验证器配置不作为 CLI 参数、日志或公开接口输出，资料保存于 Git 排除的 .local。绑定 TOTP 的 SHA1/6位/30秒配置由初始化资料导入验证器，同一验证码只能登录一次。详细当前账号与登录方式见 [ACCOUNT](ACCOUNT.md)。
 
-2026-10-04 新增邮箱认证契约见 [数据库账号与邮箱认证](ACCOUNT_EMAIL_IMPLEMENTATION.md)。未登录发码只有 `/api/auth/login/code`，请求只含密码，服务端从数据库已验证邮箱取收件人。登录页方式由 `/api/auth/login/options` 提供，不含邮箱。登录和发码仅豁免登录态 CSRF，仍检查可信 Origin；绑定邮箱、密码和邮箱修改均要求 Cookie + CSRF。二次验证错误使用 400 独立错误码，会话失效为 401。`totpEnabled` 表示数据库中保留的 TOTP 配置状态，当前登录方式由 `authMethod` 决定。密码、验证码和挑战仅存前端内存，认证版本变化使旧会话、挑战和待操作失效。
+2026-10-04 新增邮箱认证的使用说明见[账号与登录](ACCOUNT.md)，本地开发记录为 `docs/ACCOUNT_EMAIL_IMPLEMENTATION.md`。未登录发码只有 `/api/auth/login/code`，请求只含密码，服务端从数据库已验证邮箱取收件人。登录页方式由 `/api/auth/login/options` 提供，不含邮箱。登录和发码仅豁免登录态 CSRF，仍检查可信 Origin；绑定邮箱、密码和邮箱修改均要求 Cookie + CSRF。二次验证错误使用 400 独立错误码，会话失效为 401。`totpEnabled` 表示数据库中保留的 TOTP 配置状态，当前登录方式由 `authMethod` 决定。密码、验证码和挑战仅存前端内存，认证版本变化使旧会话、挑战和待操作失效。
 
 ### 3.2 分类、元数据与观看记录：子代理 1
 

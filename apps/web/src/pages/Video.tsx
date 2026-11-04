@@ -63,7 +63,6 @@ export function VideoPage() {
           <div className="video-detail-left">
             <div className="video-main-title-row">
               <h2>{video.title}</h2>
-              <span className={`state-badge ${video.status}`}>已登记</span>
             </div>
             <div className="video-tags-row">
               <span className="category-pill-badge">
@@ -72,61 +71,67 @@ export function VideoPage() {
               <TagBadges tags={video.tags ?? []} />
             </div>
           </div>
-          <div className="video-detail-right">
-            <PublicAddress publicUrl={video.publicUrl} library={detail.data} />
-          </div>
         </div>
 
         {/* 科技数据面板 (DATA PANEL - 参考设计图第2幅底层) */}
-        <section className="sci-data-panel">
-          <div className="sci-data-panel-header">
+        <details className="sci-data-panel" key={video.id}>
+          <summary className="sci-data-panel-header">
             <div className="sci-data-title">
               <span className="cyber-glow-bar" />
               <strong>数据面板</strong>
               <small>DATA PANEL</small>
             </div>
-            <span className="sci-sys-info">视频文件信息</span>
-          </div>
+            <span className="sci-data-panel-toggle">
+              <span className="sci-data-panel-expand">展开</span>
+              <span className="sci-data-panel-collapse">收起</span>
+              <Icon name="chevron" />
+            </span>
+          </summary>
 
-          <div className="sci-data-grid">
-            <div className="sci-data-cell">
-              <span className="sci-data-label">分辨率</span>
-              <span className="sci-data-value">
-                {video.width !== null && video.height !== null ? `${video.width} × ${video.height}` : "尚未采集"}
-              </span>
+          <div className="sci-data-panel-content stack">
+            <div className="sci-data-cell sci-data-address">
+              <PublicAddress publicUrl={video.publicUrl} library={detail.data} />
             </div>
-            <div className="sci-data-cell">
-              <span className="sci-data-label">编码</span>
-              <span className="sci-data-value highlight">
-                {video.codec ? video.codec.toUpperCase() : "尚未采集"}
-              </span>
-            </div>
-            <div className="sci-data-cell">
-              <span className="sci-data-label">时长</span>
-              <span className="sci-data-value code">
-                {videoDuration(savedDuration?.id === video.id ? savedDuration.seconds : video.durationSeconds)}
-              </span>
-            </div>
-            <div className="sci-data-cell">
-              <span className="sci-data-label">文件大小</span>
-              <span className="sci-data-value">
-                {bytes(video.sizeBytes)}
-              </span>
-            </div>
-            <div className="sci-data-cell">
-              <span className="sci-data-label">上传日期</span>
-              <span className="sci-data-value">
-                {date(video.createdAt)}
-              </span>
-            </div>
-            <div className="sci-data-cell">
-              <span className="sci-data-label">观看位置</span>
-              <span className="sci-data-value accent">
-                {duration(video.lastPositionSeconds)}
-              </span>
+            <div className="sci-data-grid">
+              <div className="sci-data-cell">
+                <span className="sci-data-label">分辨率</span>
+                <span className="sci-data-value">
+                  {video.width !== null && video.height !== null ? `${video.width} × ${video.height}` : "尚未采集"}
+                </span>
+              </div>
+              <div className="sci-data-cell">
+                <span className="sci-data-label">编码</span>
+                <span className="sci-data-value highlight">
+                  {video.codec ? video.codec.toUpperCase() : "尚未采集"}
+                </span>
+              </div>
+              <div className="sci-data-cell">
+                <span className="sci-data-label">时长</span>
+                <span className="sci-data-value code">
+                  {videoDuration(savedDuration?.id === video.id ? savedDuration.seconds : video.durationSeconds)}
+                </span>
+              </div>
+              <div className="sci-data-cell">
+                <span className="sci-data-label">文件大小</span>
+                <span className="sci-data-value">
+                  {bytes(video.sizeBytes)}
+                </span>
+              </div>
+              <div className="sci-data-cell">
+                <span className="sci-data-label">上传日期</span>
+                <span className="sci-data-value">
+                  {date(video.createdAt)}
+                </span>
+              </div>
+              <div className="sci-data-cell">
+                <span className="sci-data-label">观看位置</span>
+                <span className="sci-data-value accent">
+                  {duration(video.lastPositionSeconds)}
+                </span>
+              </div>
             </div>
           </div>
-        </section>
+        </details>
       </>}
     </>
   );

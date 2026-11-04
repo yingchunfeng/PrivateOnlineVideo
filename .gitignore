@@ -21,3 +21,47 @@ apps/web/qa/stage2-long-*/
 docs/task/task2026-10-30.md
 docs/task/ui-management-roadmap.md
 .workbuddy/
+.ccgui/
+.codex/
+.agents/
+.aws/
+
+# 本机配置与恢复资料；公开示例单独保留，不覆盖现有配置。
+/config/deployment.json
+/config/library.json
+*.auth.key
+auth.key
+*.installation-code.txt
+account-setup.json
+account-recovery-*.json
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# 本地需求、阶段计划、原型及交接记录；已跟踪文件需另行确认取消跟踪。
+/docs/archive/
+/docs/task/
+/docs/prototypes/
+/docs/ACCOUNT_EMAIL_IMPLEMENTATION.md
+/docs/theme-and-space-design.md
+/apps/web/HANDOFF.md
+/apps/api/src/modules/media/HANDOFF.md
+/apps/api/src/modules/media/OSS_ACCEPTANCE.md
+
+# 浏览器截图、报告与增量编译缓存，不影响 test/ 源码和固定 fixtures。
+/apps/web/qa/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# 专用实云验收依赖本机历史授权；常规回归源码和构建依赖继续跟踪。
+/apps/web/test/stage2-real-oss.test.ts
+/apps/web/test/output/
+/apps/web/test/reports/
+/apps/web/test/artifacts/
+/apps/web/test/screenshots/
+coverage/
+.nyc_output/
+blob-report/

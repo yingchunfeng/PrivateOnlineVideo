@@ -25,14 +25,14 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
     await t.test("登录错误、受保护恢复入口、登录、会话过期与退出", async () => {
       await page.getByLabel("密码", { exact: true }).fill("bad-password");
       await page.getByLabel("动态验证码").fill("000000");
-      await page.getByRole("button", { name: "进入视频库" }).click();
+      await page.getByRole("button", { name: "进入高光时刻" }).click();
       await expect(page.getByRole("alert")).toContainText("请先登录");
       await page.getByRole("button", { name: "无法使用动态验证码？" }).click();
       await expect(page.getByText("当前网站没有匿名重置入口。", { exact: false })).toBeVisible();
       const login = async () => {
         await page.getByLabel("密码", { exact: true }).fill("demo-password");
         await page.getByLabel("动态验证码").fill("123456");
-        await page.getByRole("button", { name: "进入视频库" }).click();
+        await page.getByRole("button", { name: "进入高光时刻" }).click();
         await expect(page.getByRole("navigation", { name: "主要导航" })).toBeVisible();
       };
       await login();
@@ -46,7 +46,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await login();
     });
     await t.test("库筛选、分页、分类创建重命名、元数据编辑与选择性导入", async () => {
-      await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "云影匣·高光时刻" })).toBeVisible();
       const beforeScroll = await page.locator(".video-card").count();
       await page.locator(".infinite-sentinel").scrollIntoViewIfNeeded();
       await expect(page.locator(".video-card").count()).toBeGreaterThan(beforeScroll);
@@ -70,7 +70,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await page.getByLabel("视频标题", { exact: true }).fill("修改后的山间记录"); await page.getByLabel("视频分类").selectOption({ label: "珍藏" });
       await page.getByRole("button", { name: "保存视频信息" }).click();
       await expect(page.getByRole("heading", { name: "修改后的山间记录" })).toBeVisible();
-      await page.getByRole("link", { name: "← 返回视频库" }).click();
+      await page.getByRole("link", { name: "← 返回高光时刻" }).click();
       await page.getByRole("button", { name: "导入已有视频" }).click(); await page.getByRole("button", { name: "预览已有视频" }).click();
       await page.locator(".import-items").getByRole("checkbox").check(); await page.getByRole("button", { name: "导入选中的 1 项" }).click();
       await expect(page.getByText("已登记 1 个视频；", { exact: false })).toBeVisible();
@@ -90,7 +90,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await video.evaluate(node => { const video = node as HTMLVideoElement; video.currentTime = 4; video.pause(); });
       await expect.poll(async () => video.evaluate(node => (node as HTMLVideoElement).currentTime)).toBeGreaterThan(3.5);
       await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem("ov.dev-mock.data.v1") ?? "{}").videos.find((v: { id: string }) => v.id === "video-lake").lastPositionSeconds)).toBeGreaterThan(3.5);
-      await page.getByRole("link", { name: "← 返回视频库" }).click();
+      await page.getByRole("link", { name: "← 返回高光时刻" }).click();
       await page.goto(`${baseURL}/videos/video-lake`);
       await page.getByRole("button", { name: /从 0:0[4-5] 继续/ }).click();
       await expect(page.getByText("已恢复至", { exact: false })).toBeVisible();
@@ -184,7 +184,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
       await expect(page.getByRole("button", { name: "撤销当前会话" })).toBeFocused();
       await page.keyboard.press("Enter"); await page.getByRole("button", { name: "确认撤销" }).click();
       await expect(page.getByRole("heading", { name: "安全登录" })).toBeVisible();
-      await page.getByLabel("密码", { exact: true }).fill("demo-password"); await page.getByLabel("动态验证码").fill("123456"); await page.getByRole("button", { name: "进入视频库" }).click();
+      await page.getByLabel("密码", { exact: true }).fill("demo-password"); await page.getByLabel("动态验证码").fill("123456"); await page.getByRole("button", { name: "进入高光时刻" }).click();
       await expect(page.getByRole("heading", { name: "安全与用量" })).toBeVisible();
     });
     await t.test("手机横竖屏、触控、长标题、空态和网络异常", async () => {
@@ -195,7 +195,7 @@ test("安卓优先浏览器场景（明确开发 Mock）", async t => {
         const tiny = await page.locator("button:visible, input:not([type=checkbox]):visible, select:visible, .bottom-nav a:visible").evaluateAll(nodes => nodes.filter(node => { const rect = node.getBoundingClientRect(); return rect.height < 44 || rect.width < 44; }).map(node => node.tagName + ":" + node.textContent));
         expect(tiny).toEqual([]);
       };
-      await page.goto(`${baseURL}/`); await expect(page.getByRole("heading", { name: "我的视频库" })).toBeVisible();
+      await page.goto(`${baseURL}/`); await expect(page.getByRole("heading", { name: "云影匣·高光时刻" })).toBeVisible();
       await expect(page.locator(".video-card").first()).toBeVisible(); await expect(page.getByRole("button", { name: "旅行", exact: true })).toBeVisible(); await expect(page.getByRole("status", { name: "正在加载…" })).toHaveCount(0);
       await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.scrollTo(0, 0); });
       await page.screenshot({ path: `${qaDir}/phone-library.png`, fullPage: true }); await assertLayout();

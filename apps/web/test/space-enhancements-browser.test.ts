@@ -149,7 +149,7 @@ test("remaining space effects: single confirmations, navigation continuity and o
       await page.getByRole("button", { name: "刷新任务历史", exact: true }).click();
       await expect(page.locator(".loading")).toHaveCount(0);
       await expect(page.locator(".task-completion-halo")).toHaveCount(0);
-      await page.getByRole("navigation", { name: "系统主菜单" }).getByRole("link", { name: "首页库" }).click();
+      await page.getByRole("navigation", { name: "系统主菜单" }).getByRole("link", { name: "高光时刻" }).click();
       await page.getByRole("navigation", { name: "系统主菜单" }).getByRole("link", { name: "任务列表" }).click();
       await expect(page.locator('[data-task-id="new-confirmation"]')).toBeVisible();
       await expect(page.locator(".task-completion-halo")).toHaveCount(0);
