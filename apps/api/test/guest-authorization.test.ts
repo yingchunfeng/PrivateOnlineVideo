@@ -114,6 +114,23 @@ test("上传权限只补齐本人上传的封面/时长，编辑与仅删记录�
   } finally { await f.close(); }
 });
 
+test("首页排序：真实路由鉴权/CSRF，配置权限可授权，普通访客不可读写", async () => {
+  const f = await fixture();
+  try {
+    const plain = await f.guest(["library"]); const editor = await f.guest(["configuration"]);
+    const data = (await f.request(f.admin, "/api/settings/homepage")).json().data;
+    const body = { version: data.version, categoryRandomEnabled: false, videoOrder: data.videoOrder };
+    assert.equal((await f.app.inject({ url: "/api/settings/homepage" })).statusCode, 401);
+    for (const method of ["GET", "PUT"] as const) assert.equal((await f.request(plain.headers, "/api/settings/homepage", method, method === "PUT" ? body : undefined)).statusCode, 403);
+    assert.equal((await f.request(editor.headers, "/api/settings/homepage")).statusCode, 200);
+    assert.equal((await f.app.inject({ method: "PUT", url: "/api/settings/homepage", headers: { cookie: f.admin.cookie!, origin: f.admin.origin! }, payload: body })).statusCode, 403);
+    const saved = await f.request(editor.headers, "/api/settings/homepage", "PUT", body);
+    assert.equal(saved.statusCode, 200, saved.body); assert.equal(saved.json().data.categoryRandomEnabled, false);
+    assert.equal((await f.request(f.admin, "/api/settings/homepage", "PUT", body)).json().error.code, "CONFIG_VERSION_CONFLICT");
+    assert.equal((await f.request(f.admin, "/api/settings/homepage")).json().data.version, data.version + 1);
+  } finally { await f.close(); }
+});
+
 test("权限更新即时约束既有全部会话，配置可授权但全站设置不可授权；自然到期逐请求拒绝", async () => {
   const f = await fixture();
   try {

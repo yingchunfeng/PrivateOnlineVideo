@@ -109,6 +109,11 @@ export const siteSettings = sqliteTable("site_settings", {
   id: integer("id").primaryKey(), defaultTheme: text("default_theme", { enum: ["light", "dark"] }).notNull(),
   maxUploadBytes: integer("max_upload_bytes").notNull(), version: integer("version").notNull(), updatedAt: text("updated_at").notNull()
 });
+export const homepageSettings = sqliteTable("homepage_settings", {
+  ownerId: text("owner_id").primaryKey().notNull().references(() => users.id),
+  categoryRandomEnabled: integer("category_random_enabled", { mode: "boolean" }).notNull(),
+  videoOrder: text("video_order").notNull(), version: integer("version").notNull(), updatedAt: text("updated_at").notNull()
+});
 export const emailVerificationChallenges = sqliteTable("email_verification_challenges", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull().references(() => users.id), loginSessionId: text("login_session_id").notNull().references(() => loginSessions.id),
   authVersion: integer("auth_version").notNull(), enabled: integer("enabled", { mode: "boolean" }).notNull(), targetEmail: text("target_email").notNull(),

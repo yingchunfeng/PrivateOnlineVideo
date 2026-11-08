@@ -1,4 +1,5 @@
-import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, isVideoDuration, PART_CHECKSUM_HEADER, SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
+import { CSRF_HEADER, ERROR_DEFINITIONS, findEmailProvider, isPartChecksum, isVideoDuration, orderHomepageVideos, PART_CHECKSUM_HEADER, SUPPORTED_EMAIL_PROVIDERS } from "@online-video/shared";
+import type { HomepageSettings, UpdateHomepageSettingsRequest } from "@online-video/shared";
 import type { ApplicationUsage, AuthSession, Category, CreateUploadRequest, EmailChallenge, EmailChallengePurpose, ErrorCode, ImportPreview, LibraryConfiguration, LibraryGroup, LoginRequest, LoginSession, PlaybackSession, SaveLibraryConfigurationRequest, Tag, UploadTask, VideoDetail, UploadedPart } from "@online-video/shared";
 import type { Transport } from "./client";
 
@@ -15,7 +16,7 @@ const initialTags: Tag[] = [{ id: "tag-outdoor", name: "户外", createdAt: now(
 const fixtureVideo = (id: string, title: string, categoryId: string, status: VideoDetail["status"] = "ready"): VideoDetail => ({ id, title, categoryId, groupIds: categoryId === "cat-travel" ? ["group-travel"] : [], tagIds: categoryId === "cat-travel" ? ["tag-outdoor"] : [], durationSeconds: status === "ready" ? 12 : null, sizeBytes: 12 * 1048576, status, thumbnailUrl: null, createdAt: now(), codec: status === "ready" ? "VP8（开发样例）" : null, width: status === "ready" ? 640 : null, height: status === "ready" ? 360 : null, playable: status === "ready", lastPositionSeconds: 0 });
 const initialVideos = [fixtureVideo("video-lake", "山间的一次散步", "cat-travel"), fixtureVideo("video-city", "傍晚，回家的路", "cat-life"), fixtureVideo("video-sun", "日光里的小片段", "cat-default"), fixtureVideo("video-processing", "正在整理的手机原片", "cat-default", "processing"), fixtureVideo("video-hevc", "HEVC 原片 · 需要兼容副本", "cat-default", "unsupported"), fixtureVideo("video-failed", "元数据处理失败的样例", "cat-default", "failed"), ...Array.from({ length: 8 }, (_, i) => fixtureVideo(`video-extra-${i}`, `旅途记录 ${i + 1}`, "cat-travel"))];
 const portrait = initialVideos.find(video => video.id === "video-city")!; portrait.width = 360; portrait.height = 640;
-interface MockState { categories: Category[]; groups: LibraryGroup[]; tags: Tag[]; videos: VideoDetail[]; uploads: Record<string, UploadTask>; uploadMeta: Record<string, { title: string; categoryId: string; groupIds?: string[]; tagIds?: string[]; tags?: string[] }>; configurationVersion?: number; categoryTags?: Record<string, string[]>; siteSettings?: { version: number; defaultTheme: "light" | "dark"; maxUploadBytes: number } }
+interface MockState { categories: Category[]; groups: LibraryGroup[]; tags: Tag[]; videos: VideoDetail[]; uploads: Record<string, UploadTask>; uploadMeta: Record<string, { title: string; categoryId: string; groupIds?: string[]; tagIds?: string[]; tags?: string[] }>; configurationVersion?: number; categoryTags?: Record<string, string[]>; siteSettings?: { version: number; defaultTheme: "light" | "dark"; maxUploadBytes: number }; homepageSettings?: Pick<HomepageSettings, "version" | "categoryRandomEnabled" | "videoOrder">; homepageLoginSeed?: string }
 const stateKey = "ov.dev-mock.data.v1";
 function loadState(): MockState {
     try { const raw = sessionStorage.getItem(stateKey); if (raw) { const loaded = JSON.parse(raw) as MockState; loaded.groups ??= structuredClone(initialGroups); loaded.tags ??= structuredClone(initialTags); for (const c of loaded.categories) c.isDefault = c.id === "cat-default"; const vertical = loaded.videos.find(v => v.id === "video-city"); if (vertical) { vertical.width = 360; vertical.height = 640; } return loaded; } } catch { /* Mock 缓存不影响真实接口。 */ }
@@ -31,7 +32,7 @@ const failedParts = new Set<string>();
 const failedCompletions = new Set<string>();
 let otherSession = true;
 const loggedIn = () => document.cookie.split("; ").includes("ov_dev_mock_session=active");
-const setLogin = (active: boolean) => { document.cookie = `ov_dev_mock_session=${active ? "active" : ""}; Path=/; SameSite=Strict${active ? "" : "; Max-Age=0"}`; };
+const setLogin = (active: boolean) => { document.cookie = `ov_dev_mock_session=${active ? "active" : ""}; Path=/; SameSite=Strict${active ? "" : "; Max-Age=0"}`; if (active) { state.homepageLoginSeed = crypto.randomUUID(); persist(); } };
 // 开发 Mock 的账号与验证状态只在内存中保存，不作为真实账户资料。
 const account = { password: "demo-password", authMethod: "totp" as "totp" | "email", authVersion: 1, email: null as string | null, emailVerifiedAt: null as string | null };
 type MockOperation = { id: string; kind: "bind_email" | "change_password" | "change_email"; target: string; version: number; oldVerified: boolean; active: boolean; expiresAt: string };
@@ -204,7 +205,9 @@ export function createMockTransport(): Transport {
       const query = (url.searchParams.get("q") ?? "").toLowerCase(); const category = url.searchParams.get("categoryId");
       const groupIds = url.searchParams.get("groupIds")?.split(",") ?? []; const tagIds = url.searchParams.get("tagIds")?.split(",") ?? [];
       let tags: string[]; try { tags = JSON.parse(url.searchParams.get("tags") ?? "[]") as string[]; if (!Array.isArray(tags) || tags.some(tag => typeof tag !== "string")) return fail("VALIDATION_ERROR"); } catch { return fail("VALIDATION_ERROR"); }
-      const videos = scenario === "empty" ? [] : state.videos.map(publicVideo).map(v => scenario === "long" ? { ...v, title: `${v.title} · ${"很长的视频标题与旅行中的完整记录".repeat(9)}` } : v).filter(v => (!category || v.categoryId === category) && (v.title.toLowerCase().includes(query) || v.tags?.some(tag => tag.toLowerCase().includes(query))) && tags.every(tag => v.tags?.includes(tag)) && groupIds.every(id => v.groupIds?.includes(id)) && tagIds.every(id => v.tagIds?.includes(id))).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const filtered = scenario === "empty" ? [] : state.videos.map(publicVideo).map(v => scenario === "long" ? { ...v, title: `${v.title} · ${"很长的视频标题与旅行中的完整记录".repeat(9)}` } : v).filter(v => (!category || v.categoryId === category) && (v.title.toLowerCase().includes(query) || v.tags?.some(tag => tag.toLowerCase().includes(query))) && tags.every(tag => v.tags?.includes(tag)) && groupIds.every(id => v.groupIds?.includes(id)) && tagIds.every(id => v.tagIds?.includes(id))).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const seed = (state.homepageSettings?.categoryRandomEnabled ?? true) && !category && !query && !tags.length && !groupIds.length && !tagIds.length ? state.homepageLoginSeed ?? "mock-existing-session" : undefined;
+      const videos = orderHomepageVideos(filtered, state.homepageSettings?.videoOrder ?? [], state.categories.filter(category => !category.archivedAt).sort((a, b) => a.sortOrder - b.sortOrder).map(category => category.id), seed);
       return ok({ items: videos.slice((page - 1) * pageSize, page * pageSize), total: videos.length, page, pageSize });
     }
     if (path === "/api/videos/register-public" && method === "POST") {
@@ -247,6 +250,19 @@ export function createMockTransport(): Transport {
     }
     const playbackMatch = path.match(/^\/api\/playback-sessions\/([^/]+)\/(heartbeat|close)$/);
     if (playbackMatch) { const session = playback.get(playbackMatch[1]!); if (!session) return fail("NOT_FOUND"); if (playbackMatch[2] === "close") { playback.delete(session.id); return ok({ success: true }); } if (scenario === "limit") return fail("TRANSFER_LIMIT_EXCEEDED"); const renewed = { ...session, expiresAt: expires() }; playback.set(session.id, renewed); return ok(renewed); }
+    if (path === "/api/settings/homepage") {
+      const current = state.homepageSettings ?? { version: 0, categoryRandomEnabled: true, videoOrder: [] };
+      const videos = orderHomepageVideos(state.videos.map(publicVideo).sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)), current.videoOrder, []);
+      if (method === "PUT") {
+        const body = bodyOf<UpdateHomepageSettingsRequest>(init);
+        if (Object.keys(body).some(key => !["version", "categoryRandomEnabled", "videoOrder"].includes(key)) || !Number.isSafeInteger(body.version) || typeof body.categoryRandomEnabled !== "boolean" || !Array.isArray(body.videoOrder) || body.videoOrder.some(id => typeof id !== "string") || new Set(body.videoOrder).size !== body.videoOrder.length) return fail("VALIDATION_ERROR");
+        if (body.version !== current.version || body.videoOrder.length !== videos.length || body.videoOrder.some(id => !videos.some(video => video.id === id))) return fail("CONFIG_VERSION_CONFLICT");
+        state.homepageSettings = { ...body, version: current.version + 1 }; persist();
+      }
+      const next = state.homepageSettings ?? current;
+      const ordered = orderHomepageVideos(videos, next.videoOrder, []);
+      return ok({ ...next, videoOrder: ordered.map(video => video.id), videos: ordered.map(({ id, title, categoryId }) => ({ id, title, categoryId })), persistenceAvailable: true });
+    }
     if (path === "/api/settings/site") {
       const current = state.siteSettings ?? { version: 0, defaultTheme: "light" as const, maxUploadBytes: 2147483648 };
       if (method === "PATCH") {

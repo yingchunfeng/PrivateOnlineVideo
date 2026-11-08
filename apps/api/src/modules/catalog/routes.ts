@@ -10,6 +10,7 @@ import { objectKeyFromPublicUrl } from "../../core/library-config.js";
 import { createLibraryConfiguration } from "../../core/library-configuration.js";
 import type { SaveLibraryConfigurationRequest } from "@online-video/shared";
 import { createSiteSettings } from "../site-settings/service.js";
+import { createHomepageSettings } from "../site-settings/homepage.js";
 import { assertGuestRequest } from "../../core/guest-access.js";
 
 export interface BackendDependencies { database: AppDatabase; auth: AuthGuard; config: AppConfig; now?: () => Date }
@@ -21,6 +22,7 @@ function body(value: unknown, allowed: string[]): Record<string, unknown> {
 export async function registerBackendModule(app: FastifyInstance, deps: BackendDependencies) {
   const repos = createRepositories(deps.database, deps.now ?? (() => new Date()), deps.config.library);
   const siteSettings = createSiteSettings(deps.database, deps.config, deps.now);
+  const homepageSettings = createHomepageSettings(deps.database, deps.now);
   const configuration = deps.config.library ? createLibraryConfiguration(deps.database, deps.config.library, deps.config.libraryConfigPath, deps.now) : null;
   const editable = (ownerId: string): SaveLibraryConfigurationRequest => {
     const current = configuration!.view(ownerId);
@@ -93,7 +95,7 @@ export async function registerBackendModule(app: FastifyInstance, deps: BackendD
     for (const field of ["page", "pageSize"] as const) if (raw[field] !== undefined) {
       if (!/^\d+$/.test(raw[field])) throw new HttpError("VALIDATION_ERROR"); query[field] = Number(raw[field]);
     }
-    return { data: await repos.catalog.list(auth.user.id, query) };
+    return { data: await repos.catalog.list(auth.user.id, query, auth.loginSessionId) };
   });
   app.post("/api/videos/register-public", async request => {
     const auth = await deps.auth.requireUser(request, { mutation: true }); const config = deps.config.library;
@@ -129,6 +131,12 @@ export async function registerBackendModule(app: FastifyInstance, deps: BackendD
     const result = await repos.videos.deleteOwnedRecord!(auth.user.id, request.params.videoId);
     return { data: { ...result, objects: result.objects.map(object => ({ ...object,
       bucket: object.bucket ?? (object.publicUrl && deps.config.library ? deps.config.oss?.bucket ?? null : null) })) } };
+  });
+  app.get("/api/settings/homepage", async request => {
+    const auth = await deps.auth.requireUser(request, { mutation: false }); return { data: homepageSettings.view(auth.user.id) };
+  });
+  app.put("/api/settings/homepage", async request => {
+    const auth = await deps.auth.requireUser(request, { mutation: true }); return { data: homepageSettings.save(auth.user.id, request.body) };
   });
   app.get("/api/settings/site", async request => {
     await deps.auth.requireUser(request, { mutation: false }); return { data: siteSettings.view() };

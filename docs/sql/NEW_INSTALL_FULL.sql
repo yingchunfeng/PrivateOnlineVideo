@@ -1,4 +1,4 @@
--- 云影匣：新部署完整 SQLite 结构（v8）。UTF-8，无 BOM。
+-- 云影匣：新部署完整 SQLite 结构（v9）。UTF-8，无 BOM。
 -- 仅在新的空 .db 中整份执行；绝不能在现有正式库或旧测试库执行。
 -- 数据库工具必须遇错停止；若报错，在同一连接 ROLLBACK 后核查，不要继续执行或删除旧数据。
 -- 本文件由当前迁移结构生成，含真实版本校验记录；不要再叠加执行历史 SQL。
@@ -375,6 +375,15 @@ CREATE TABLE guest_uploads (
   guest_id TEXT NOT NULL REFERENCES guests(id)
 );
 
+-- table: homepage_settings
+CREATE TABLE homepage_settings (
+  owner_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id),
+  category_random_enabled INTEGER NOT NULL CHECK(category_random_enabled IN (0, 1)),
+  video_order TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK(version > 0),
+  updated_at TEXT NOT NULL
+);
+
 -- index: login_owner
 CREATE INDEX login_owner ON login_sessions(owner_id);
 
@@ -502,7 +511,7 @@ BEGIN SELECT RAISE(ABORT,'verified email required'); END;
 INSERT INTO smtp_provider_types(code,name,email_domain,smtp_host,enabled) VALUES('163','163 邮箱','163.com','smtp.163.com',1);
 INSERT INTO smtp_provider_types(code,name,email_domain,smtp_host,enabled) VALUES('qq','QQ 邮箱','qq.com','smtp.qq.com',1);
 
--- 对应 0001～0008 的结构来源校验；应用会核对版本、顺序和 SHA-256。
+-- 对应 0001～0009 的结构来源校验；应用会核对版本、顺序和 SHA-256。
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(1,'b2f9606329c23ed3b94d175842450f50989f4eada73c0d5b1f4602d7d5e7a92e',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(2,'ed502f9ad6854fc43178fc5ec37d65476bdb0475d151adbdd2a36c0bf42e151a',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(3,'6aa89f44a7c995d5aa2694bf24b8482b5ae68e928c44b4fa21ce99998625b0fc',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
@@ -511,6 +520,7 @@ INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(5,'afc765ff5cc
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(6,'d982b4876cfe735370e1c93efce7fb09e089b49e7b5ffceec8758b4da563dc55',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(7,'b5db48e45e1a5b980a3a1e0419e6a23bf4a2b9d0904d0692edfc80307bead524',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(8,'61f5d06a0df37caa3365c6e9e8608808a90b6d47dbd2c1cd02a5b85117f463d4',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+INSERT INTO schema_migrations(version,checksum,applied_at) VALUES(9,'0a97bedb1cc66ca7f9c1c2e7a6f170b83c6fcf4013d732a65b3dbfff8082ce8f',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 COMMIT;
 PRAGMA foreign_key_check;
 PRAGMA integrity_check;

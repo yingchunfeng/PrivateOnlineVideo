@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { chromium, expect } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
-import type { LibraryConfiguration, SaveLibraryConfigurationRequest, UploadTask, VideoDetail } from "@online-video/shared";
+import type { HomepageSettings, LibraryConfiguration, SaveLibraryConfigurationRequest, UploadTask, VideoDetail } from "@online-video/shared";
 
 const evidenceRoot = fileURLToPath(new URL(`../../../.local/acceptance/ui-management-${randomUUID()}/`, import.meta.url));
 const configuration = (): LibraryConfiguration => ({ version: "v1", writable: true, categories: [
@@ -27,6 +27,9 @@ async function openBrowser() {
 
 async function installFixture(context: BrowserContext) {
   let config = configuration(); let revision = 1; let serial = 0; let nextFailure = "";
+  const homepageVideos = Array.from({ length: 25 }, (_, index) => ({ id: `home-${index}`, title: `排序视频 ${index + 1}`, categoryId: index % 2 ? "travel" : "base" }));
+  let homepage: HomepageSettings = { version: 0, categoryRandomEnabled: true, videos: homepageVideos, videoOrder: homepageVideos.map(video => video.id), persistenceAvailable: true };
+  const homepageSaves: unknown[] = []; let nextHomepageFailure = "";
   const saves: SaveLibraryConfigurationRequest[] = []; const requests: string[] = [];
   const media = await readFile(new URL("./fixtures/demo.webm", import.meta.url));
   const task: UploadTask = { id: "task-1", title: "可暂停续传的长标题任务·云端旅行记录", fileName: "demo.webm", categoryId: "travel", tags: ["收藏"], videoId: null, sizeBytes: media.length, partSizeBytes: Math.ceil(media.length / 4), status: "uploading", uploadedParts: [], createdAt: "2026-10-30T09:00:00.000Z" };
@@ -43,6 +46,16 @@ async function installFixture(context: BrowserContext) {
     if (path === "/api/settings/limits") return ok({ maxUploadBytes: 2147483648, partSizeBytes: task.partSizeBytes, maxUploadConcurrency: 1, maxPlaybackSessions: 0, maxAuthorizationsPerMinute: 0 });
     if (path === "/api/library") return ok({ mediaBaseUrl: "https://media.invalid", objectPrefix: "onlineVideo/", categories: config.categories.map(category => ({ ...category, tags: config.tags.filter(tag => tag.enabled && category.tagIds.includes(tag.id)).map(tag => tag.name) })) });
     if (path === "/api/videos") return ok({ items: [], total: 0, page: 1, pageSize: 12 });
+    if (path === "/api/settings/homepage") {
+      if (request.method() === "PUT") {
+        homepageSaves.push(body);
+        if (nextHomepageFailure) { const failure = nextHomepageFailure; nextHomepageFailure = ""; return fail(failure); }
+        if (body.version !== homepage.version) return fail("CONFIG_VERSION_CONFLICT");
+        const videoOrder = body.videoOrder as string[];
+        homepage = { ...homepage, version: homepage.version + 1, categoryRandomEnabled: body.categoryRandomEnabled as boolean, videoOrder, videos: videoOrder.map(id => homepage.videos.find(video => video.id === id)!) };
+      }
+      return ok(homepage);
+    }
     if (path === "/api/library/configuration") {
       if (request.method() !== "PUT") return ok(config);
       const update = body as unknown as SaveLibraryConfigurationRequest; saves.push(update);
@@ -68,7 +81,7 @@ async function installFixture(context: BrowserContext) {
     if (path === `/api/videos/${video.id}/cover`) { video.coverStatus = "saved"; video.coverUrl = "https://media.invalid/onlineVideo/travel/cover.jpg"; task.coverStatus = "saved"; return ok(video); }
     return fail("NOT_FOUND", 404);
   });
-  return { config: () => config, saves, requests, task, media, failNext: (code: string) => { nextFailure = code; } };
+  return { config: () => config, saves, requests, task, media, failNext: (code: string) => { nextFailure = code; }, homepage: () => homepage, homepageSaves, failHomepageNext: (code: string) => { nextHomepageFailure = code; } };
 }
 
 async function checkGeometry(page: Page, name: string) {
@@ -78,6 +91,54 @@ async function checkGeometry(page: Page, name: string) {
   await page.screenshot({ path: join(evidenceRoot, `${name}.png`), fullPage: false });
 }
 
+test("首页排序：鼠标拖拽/键盘、开关、保存重载、失败草稿和小屏只读", { timeout: 90000 }, async t => {
+  const { server, browser, origin } = await openBrowser();
+  try {
+    await mkdir(evidenceRoot, { recursive: true }); const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+    const fixture = await installFixture(context); const page = await context.newPage(); const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`${origin}/categories`); await page.getByRole("tab", { name: "首页排序", exact: true }).click();
+    await expect(page.getByRole("list", { name: "全部视频排序" }).locator("li")).toHaveCount(25);
+    await expect(page.getByRole("button", { name: "保存首页排序" })).toBeDisabled();
+    const handle = page.getByRole("button", { name: "拖动排序 排序视频 1", exact: true });
+    const start = (await handle.boundingBox())!; const target = (await page.locator('[data-sort-id="home-2"]').boundingBox())!;
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2); await page.mouse.down();
+    await page.mouse.move(start.x + start.width / 2, target.y + target.height / 2, { steps: 16 }); await page.mouse.up();
+    await expect(page.getByRole("list", { name: "全部视频排序" }).locator("li").first()).toHaveAttribute("data-sort-id", "home-1");
+    assert.deepEqual((await page.locator(".reorder-list li").evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.sortId))).slice(0, 3), ["home-1", "home-2", "home-0"]);
+    assert.equal(fixture.homepageSaves.length, 0);
+    const switcher = page.getByRole("checkbox", { name: "每个分类随机选一个视频优先展示" }); await switcher.uncheck();
+    fixture.failHomepageNext("SERVICE_NOT_CONFIGURED"); await page.getByRole("button", { name: "保存首页排序" }).click();
+    await expect(page.locator(".homepage-order [role=alert]")).toBeVisible(); await expect(switcher).not.toBeChecked(); assert.equal(fixture.homepage().version, 0);
+    await page.getByRole("button", { name: "保存首页排序" }).click(); await expect.poll(() => fixture.homepage().version).toBe(1); await expect(page.getByRole("button", { name: "保存首页排序" })).toBeDisabled();
+    assert.equal(fixture.homepage().categoryRandomEnabled, false); const saved = [...fixture.homepage().videoOrder];
+    await page.reload(); await page.getByRole("tab", { name: "首页排序", exact: true }).click();
+    await expect(switcher).not.toBeChecked(); assert.deepEqual(await page.locator(".reorder-list li").evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.sortId)), saved);
+    const second = page.getByRole("button", { name: "拖动排序 排序视频 3", exact: true }); await second.focus(); await page.keyboard.press("ArrowUp");
+    fixture.failHomepageNext("CONFIG_VERSION_CONFLICT"); await page.getByRole("button", { name: "保存首页排序" }).click(); await expect(page.locator(".homepage-order .notice.warning")).toContainText("草稿暂时保留");
+    await page.getByRole("button", { name: "重新加载最新排序" }).click(); await expect(page.getByRole("button", { name: "保存首页排序" })).toBeDisabled();
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+      for (const width of [1440, 375, 320]) { await page.setViewportSize({ width, height: width === 1440 ? 900 : 740 }); await checkGeometry(page, `homepage-order-${theme}-${width}`); }
+    }
+    fixture.homepage().persistenceAvailable = false; await page.getByRole("button", { name: "重新加载最新排序" }).click();
+    await expect(switcher).toBeDisabled(); await expect(page.getByRole("button", { name: "保存首页排序" })).toBeDisabled(); await expect(page.locator(".homepage-order")).toContainText("尚未升级到 v9");
+    assert.deepEqual(errors, []); await context.close();
+    const touchContext = await browser.newContext({ viewport: { width: 375, height: 900 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
+    const touchFixture = await installFixture(touchContext); const mobile = await touchContext.newPage();
+    await mobile.goto(`${origin}/categories`); await mobile.getByRole("tab", { name: "首页排序", exact: true }).click();
+    const touchHandle = mobile.getByRole("button", { name: "拖动排序 排序视频 1", exact: true }); await touchHandle.scrollIntoViewIfNeeded();
+    const from = (await touchHandle.boundingBox())!; const to = (await mobile.locator('[data-sort-id="home-2"]').boundingBox())!;
+    const cdp = await touchContext.newCDPSession(mobile); const x = from.x + from.width / 2; const y = from.y + from.height / 2;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (let step = 1; step <= 12; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (to.y + to.height / 2 - y) * step / 12 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(mobile.getByRole("list", { name: "全部视频排序" }).locator("li").first()).toHaveAttribute("data-sort-id", "home-1");
+    assert.deepEqual((await mobile.locator(".reorder-list li").evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.sortId))).slice(0, 3), ["home-1", "home-2", "home-0"]);
+    await mobile.getByRole("button", { name: "保存首页排序" }).click(); await expect.poll(() => touchFixture.homepage().videoOrder[0]).toBe("home-1");
+    await checkGeometry(mobile, "homepage-order-touch-375"); await touchContext.close(); t.diagnostic(`首页排序证据：${evidenceRoot}`);
+  } finally { await browser.close(); await server.close(); }
+});
+
 test("配置只读表格与弹窗：取消、排序、失败保留、冲突重试、停用恢复和浅深色小屏", { timeout: 90000 }, async t => {
   const { server, browser, origin } = await openBrowser();
   try {
@@ -85,8 +146,11 @@ test("配置只读表格与弹窗：取消、排序、失败保留、冲突重�
     const fixture = await installFixture(context); const page = await context.newPage(); const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
     await page.goto(`${origin}/categories`); await expect(page.locator("tbody input")).toHaveCount(0); await expect(page.locator("[data-category-id=travel]")).toContainText("收藏");
     const opener = page.getByRole("button", { name: "新增分类", exact: true }); await opener.click(); await page.getByLabel("分类名称").fill("取消的草稿"); await page.keyboard.press("Escape"); await expect(opener).toBeFocused(); assert.equal(fixture.saves.length, 0);
-    await opener.click(); await page.getByLabel("分类名称").fill("亲友"); await page.getByLabel("显示顺序").fill("0"); await expect(page.getByRole("checkbox", { name: "收藏", exact: true })).toBeChecked(); await page.getByRole("checkbox", { name: "收藏", exact: true }).uncheck(); await page.getByRole("button", { name: "保存", exact: true }).click();
-    await expect.poll(() => fixture.config().categories[0]?.name).toBe("亲友"); await expect(page.getByRole("dialog")).toHaveCount(0); assert.deepEqual(fixture.saves[0]?.categories[0]?.tagIds, []);
+    await opener.click(); await page.getByLabel("分类名称").fill("亲友"); await expect(page.getByLabel("显示顺序")).toHaveCount(0); await expect(page.getByRole("checkbox", { name: "收藏", exact: true })).toBeChecked(); await page.getByRole("checkbox", { name: "收藏", exact: true }).uncheck(); await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect.poll(() => fixture.config().categories.at(-1)?.name).toBe("亲友"); await expect(page.getByRole("dialog")).toHaveCount(0); assert.deepEqual(fixture.saves[0]?.categories.at(-1)?.tagIds, []);
+    await page.getByRole("button", { name: "调整分类顺序", exact: true }).click(); const handle = page.getByRole("button", { name: "拖动排序 亲友", exact: true });
+    await handle.focus(); await page.keyboard.press("ArrowUp"); await page.keyboard.press("ArrowUp"); await page.getByRole("button", { name: "保存分类顺序", exact: true }).click();
+    await expect.poll(() => fixture.config().categories[0]?.name).toBe("亲友"); await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.locator("[data-category-id=travel]").getByRole("button", { name: "编辑分类" }).click(); await page.getByLabel("分类名称").fill("旅途"); fixture.failNext("SERVICE_NOT_CONFIGURED");
     await page.getByRole("button", { name: "保存", exact: true }).click(); await page.getByRole("alertdialog").getByRole("button", { name: "确认保存" }).click();
     await expect(page.getByRole("dialog", { name: "编辑分类" }).getByRole("alert")).toBeVisible(); await expect(page.getByLabel("分类名称")).toHaveValue("旅途"); assert.equal(fixture.config().categories.find(item => item.id === "travel")?.name, "旅行");

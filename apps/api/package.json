@@ -11,6 +11,7 @@
     "dev:setup": "node --import tsx src/setup-server.ts",
     "start:setup": "node dist/setup-server.js",
     "db:export-full": "node --import tsx scripts/export-full-sql.ts",
+    "db:export-homepage-upgrade": "node --import tsx scripts/export-full-sql.ts --upgrade-v8-to-v9",
     "db:migrate": "node --import tsx src/db/migrate-cli.ts",
     "mail:configure": "node --env-file-if-exists=../../.env --import tsx scripts/smtp-config.ts",
     "account:init": "node --env-file-if-exists=../../.env --import tsx src/modules/auth/account-cli.ts init",

@@ -1,5 +1,13 @@
 # 前后端与媒体模块契约 V0.5
 
+## 2026-11-08：首页算法与拖拽排序
+
+- `GET /api/settings/homepage`：管理员或具备 `configuration` 权限的访客；返回 `version`、`categoryRandomEnabled`、完整的 `videoOrder`、轻量 `videos[{id,title,categoryId}]` 和 `persistenceAvailable`。缺少 v9 表时只读返回旧顺序，不创建表。
+- `PUT /api/settings/homepage`：同上权限，要求同源 Cookie、CSRF 和来源检查；提交 `{version, categoryRandomEnabled, videoOrder}`。`videoOrder` 必须是不重复且完整的当前资料库视频 ID 集合。配置版本不符或视频集合因新增/删除发生变化时返回 `CONFIG_VERSION_CONFLICT`，不部分保存、不静默覆盖。
+- `GET /api/videos`：算法开启且无搜索、分类或标签筛选时，使用服务端登录会话 ID 作为稳定抽选种子，每个非空分类选一个代表视频，按分类顺序前置；其余维持手动顺序。完整排序后分页，不单独打乱每页。同一会话刷新不重抽，新登录重新抽选，但可能再次抽中同一视频。关闭算法或筛选时仍按手动顺序；未排序的新视频在后，按创建时间与 ID 倒序兜底。
+
+DTO 以 `packages/shared/src/homepage.ts` 为准。迁移只新增 `homepage_settings`，不改已有迁移校验，不由启动流程自动执行。新空库完整 SQL 为 v9；已有库须先备份并另行授权增量迁移。
+
 ## 2026-11-02：站点设置、视频数据与受限访客
 
 以下接口沿用同源 Cookie、写操作 CSRF 与来源检查；访客登录同管理员登录一样先校验来源，不要求尚未取得的登录态 CSRF。共享 DTO 以 `packages/shared/src/site-settings.ts`、`guests.ts` 和 `dto.ts` 为准。
@@ -19,7 +27,7 @@
 
 访客授权采用服务端默认拒绝策略：`library/upload/pages/tasks/configuration` 分别控制页面和相关接口，`video_edit/video_delete` 为独立操作权限且依赖 `library`。系统设置、账号安全、访客管理和全站默认外观不向访客开放；上传任务按访客归属校验，视频库仍共享。服务端逐请求验证期限、撤销状态及权限，失效后中止相关在途操作；OSS 公共直链不能随站内凭证撤回。
 
-站点设置和访客表分别来自 v7/v8；服务不在启动时升级旧库。完整 v8 新库 SQL 只用于新空库；已有库需另行确认备份和增量迁移。实际使用边界见[项目说明](../README.md#管理页面与访客)。
+站点设置和访客表分别来自 v7/v8；服务不在启动时升级旧库。完整新库 SQL 只用于新空库，当前版本见文首；已有库需另行确认备份和增量迁移。实际使用边界见[项目说明](../README.md#管理页面与访客)。
 
 ## 2026-10-26：新部署初始化与配置扩展
 

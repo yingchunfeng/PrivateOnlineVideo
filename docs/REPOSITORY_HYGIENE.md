@@ -4,8 +4,8 @@
 
 - 源码、共享类型、测试源码及固定测试素材、迁移文件、锁文件和部署脚本。
 - `README.md`、`apps/web/README.md`，以及安装、部署、API、数据库、账号、OSS 和邮件等维护指南。
-- `config/deployment.example.json`、`config/library.example.json`、`.env.example`、`deploy/deployment.json.example` 等不含秘密的配置模板。
-- 新部署的唯一 SQL 入口 `docs/sql/NEW_INSTALL_FULL.sql`。另两份历史 SQL 仍被回归测试读取，不能作为普通生成文件清理。
+- `.gitignore.example`、`config/deployment.example.json`、`config/library.example.json`、`.env.example`、`deploy/deployment.json.example` 等不含秘密的配置模板。
+- 新部署的唯一 SQL 入口 `docs/sql/NEW_INSTALL_FULL.sql`，以及已有 v8 库专用的 `docs/sql/UPGRADE_V8_TO_V9.sql`。两份历史 SQL 仍被回归测试读取，不能作为普通生成文件清理。
 
 ## 只保留本机的内容
 
@@ -16,6 +16,23 @@
 - 编辑器和助手的本机配置，以及需求、阶段计划、原型、历史交接和视觉探索记录。
 - npm 缓存、构建输出、浏览器截图/报告和 TypeScript 增量缓存。
 - `apps/web/test/stage2-real-oss.test.ts` 等依赖具体本机历史授权的专用实云验收入口，以及测试的 `output/`、`reports/`、`artifacts/`、`screenshots/`、覆盖率和 Playwright 报告；不据此排除普通自动化回归源码。
+- `apps/api/scripts/` 下 `simple-oss-audit.ts`、`simple-oss-browser.ts`、`simple-oss-real-api.ts`、`stage2-cloud-preflight.ts`、`stage2-real-api.ts`、`stage2-upload-samples.ts`、`video-upgrade-acceptance.ts`：绑定本机实例、旧样例或历史授权的手工验收脚本，不是构建或普通测试的依赖。只加忽略规则不会让它们从已跟踪版本消失，需另行确认取消跟踪并保留本地副本。
+
+按已确认的维护方式，`.gitignore` 取消 Git 跟踪但保留本地文件，其规则包含 `/.gitignore` 自身。仓库改为提供 `.gitignore.example`：首次克隆后，在安装依赖、创建配置或执行 `git add` 前复制为 `.gitignore`；已有本机文件不要覆盖，按需对照模板补充规则。此变更不清除旧历史。本次仅对 `.gitignore` 取消跟踪，上述七个手工验收脚本仍待单独确认，不因模板包含忽略规则就自动取消跟踪。
+
+```powershell
+if (-not (Test-Path -LiteralPath .gitignore)) {
+  Copy-Item -LiteralPath .gitignore.example -Destination .gitignore
+}
+```
+
+Linux 首次克隆可使用以下不覆盖已有文件或链接的写法：
+
+```bash
+if [ ! -e .gitignore ] && [ ! -L .gitignore ]; then
+  cp -- .gitignore.example .gitignore
+fi
+```
 
 默认数据库配置入口不读取 `.env` 或旧 `config/library.json`。源码新安装从 `config/deployment.example.json` 创建本机配置；旧 `.env` 入口才需要自行准备 `config/library.json`，可参考 `config/library.example.json`。**模板不是现有配置的替换文件，不能直接覆盖已经运行的实例。**
 

@@ -1,5 +1,9 @@
 # CORE-02：SQLite 与 Repository
 
+> **2026-11-08 首页排序更新：源码最新为 v9（42 表），新空库完整 SQL 包含 0001～0009 和匹配账本。** [0009-homepage-settings.sql](../apps/api/src/db/migrations/0009-homepage-settings.sql) 新增 `homepage_settings`，按资料库所有者保存分类随机优先开关、全部视频的手动顺序、版本号与更新时间。默认开启算法，读取默认值不写库；写入原子校验配置版本与当前视频 ID 集合。既有 v5～v8 可继续启动，缺表时保留旧排序且禁用保存；没有自动升级或修改任何现有业务库。以下 v8 等说明为历史记录。
+
+手工升级已有 v8 库使用 [UPGRADE_V8_TO_V9.sql](sql/UPGRADE_V8_TO_V9.sql)，其中包含旧版本/校验验证、原始 0009 迁移和第 9 条账本追加，不能只运行原始建表片段。执行前须停服务、核对目标并完成一致性备份，具体边界见 [SQL 说明](sql/README.md#已有-v8-库升级到-v9)。
+
 > **2026-11-02 管理页面与访客更新：源码最新为 v8（41 表），新空库完整 SQL 已包含 0001～0008 和匹配账本。** [0007-site-settings.sql](../apps/api/src/db/migrations/0007-site-settings.sql) 新增 `site_settings`，保存默认登录外观和单文件上传上限；[0008-guests.sql](../apps/api/src/db/migrations/0008-guests.sql) 新增 `guests`、`guest_sessions`、`guest_uploads`，保存访客密码摘要、会话关联和任务归属。既有 v5/v6/v7 库可兼容启动，但缺表时不开放对应持久化写入；服务不自动迁移。本次提交未执行正式库升级，已有库不得导入新空库完整 SQL，须先另行核对目标、备份并授权增量迁移。当前流程见[新部署指南](NEW_INSTALL.md)与[数据库切换说明](DATABASE_SWITCHING.md)，以下保留各历史版本记录。
 
 > **2026-10-26 新部署更新：源码新增 v6（37 表），完整新空库使用 [NEW_INSTALL_FULL.sql](sql/NEW_INSTALL_FULL.sql)，不再逐份执行旧 SQL。** v6 仅增加安装状态、独立认证方式、安装会话/配置及邮箱开关挑战表，0001～0005 保持原校验。旧 v5 通过原入口兼容运行，不自动升级；本轮没有改动原正式库。新库及配套密钥如何启动见[新部署指南](NEW_INSTALL.md)，下文为历史升级记录。

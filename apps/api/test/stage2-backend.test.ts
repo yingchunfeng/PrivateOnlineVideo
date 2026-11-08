@@ -44,7 +44,7 @@ test("0002有序升级保存v1记录、重复升级幂等，未知ledger/名称�
   assert.equal(after.auth_method, "totp"); assert.equal(after.auth_version, 1); assert.equal(after.email, null); assert.equal(after.email_verified_at, null);
   assert.deepEqual(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all(), migrationManifest().map(migration => ({ version: migration.version })));
   assert.equal((db.prepare("SELECT name_key FROM categories").get() as { name_key: string }).name_key, "未分类");
-  db.prepare("UPDATE schema_migrations SET version=9 WHERE version=2").run(); assert.throws(() => migrateDatabase(db)); db.close();
+  db.prepare("UPDATE schema_migrations SET version=999 WHERE version=2").run(); assert.throws(() => migrateDatabase(db)); db.close();
 
   const collision = new Database(":memory:"); collision.pragma("foreign_keys=ON"); collision.exec(first.sql);
   collision.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,checksum TEXT NOT NULL,applied_at TEXT NOT NULL)");
@@ -68,7 +68,7 @@ test("历史 SQL 提案与0002及v2空库25表一致；后续表/列/外键与�
     const sql = readFileSync(resolve(WORKSPACE_ROOT, "docs/sql/STAGE2_PENDING.sql"), "utf8").replace(/\r\n/g, "\n");
     assert.equal(createHash("sha256").update(sql).digest("hex"), migrationManifest()[1]!.checksum);
     migrateDatabase(target); for (const migration of migrationManifest().slice(2)) empty.exec(migration.sql);
-    assert.deepEqual(comparable(target), comparable(empty)); assert.equal(comparable(target).length, 41);
+    assert.deepEqual(comparable(target), comparable(empty)); assert.equal(comparable(target).length, 42);
     assert.deepEqual(target.pragma("foreign_key_check"), []); assert.equal(target.pragma("integrity_check", { simple: true }), "ok");
     for (const table of Object.values(schema)) {
       const columns = target.pragma(`table_info(${getTableName(table)})`) as { name: string; type: string }[];

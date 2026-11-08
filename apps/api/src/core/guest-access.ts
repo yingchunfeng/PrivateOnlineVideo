@@ -22,6 +22,7 @@ function allowed(guest: GuestAccess, method: string, route: string, ownsVideo: b
   if (route === "/api/auth/logout") return method === "POST";
   if (route === "/api/library") return read && has("library", "upload", "tasks", "configuration", "video_edit", "video_delete");
   if (route === "/api/library/configuration") return (read || method === "PUT") && has("configuration");
+  if (route === "/api/settings/homepage") return (read || method === "PUT") && has("configuration");
   if (/^\/api\/(categories|tags|groups)$/.test(route)) return read ? has("library", "upload", "tasks", "configuration", "video_edit") : method === "POST" && has("configuration");
   if (/^\/api\/(categories|tags|groups)\/:id$/.test(route)) return method === "PATCH" && has("configuration");
   if (route === "/api/settings/limits") return read && has("upload", "tasks");

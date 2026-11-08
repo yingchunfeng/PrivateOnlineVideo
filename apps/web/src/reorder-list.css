@@ -1,0 +1,26 @@
+.reorder-hint { margin: 0 0 14px; font-size: .85rem; line-height: 1.7; }
+.reorder-scroll { max-height: min(58vh, 600px); overflow: auto; overscroll-behavior: contain; padding: 3px; }
+.reorder-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.reorder-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); transition: border-color .15s; }
+.reorder-row.is-dragging { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.reorder-handle { flex: 0 0 44px; min-width: 44px; min-height: 44px; padding: 4px; touch-action: none; cursor: grab; user-select: none; font-size: 1.25rem; letter-spacing: 1px; }
+.reorder-handle:active { cursor: grabbing; }
+.reorder-position { color: var(--text-secondary); min-width: 24px; font-variant-numeric: tabular-nums; font-size: .85rem; }
+.reorder-content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.reorder-content strong { display: block; font-size: .92rem; }
+.reorder-content small { display: block; margin-top: 5px; }
+.homepage-order-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.reorder-panel .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.homepage-order-toggle { min-height: 44px; margin-bottom: 8px; }
+.homepage-order-note { font-size: .85rem; line-height: 1.8; margin: 0 0 20px; color: var(--text-secondary); }
+.homepage-order-help { margin: -10px 0 18px; font-size: .85rem; color: var(--text-secondary); }
+.homepage-order-help summary { cursor: pointer; min-height: 36px; padding: 6px 0; }
+.homepage-order-help .homepage-order-note { margin: 6px 0 0; }
+@media (max-width: 600px) {
+  .reorder-row { gap: 8px; padding-right: 8px; }
+  .reorder-scroll { max-height: 55vh; }
+  .homepage-order > .list-bar:first-child { align-items: stretch; flex-direction: column; gap: 12px; }
+  .homepage-order-actions { width: 100%; }
+  .homepage-order-actions button { flex: 1; padding-left: 10px; padding-right: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .reorder-row { transition: none; } }

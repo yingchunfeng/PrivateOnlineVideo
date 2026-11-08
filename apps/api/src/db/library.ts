@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Category, LibraryConfig, LibraryGroup, Tag, OrganizationSelection, VideoListQuery, UpdateVideoRequest, WatchProgress } from "@online-video/shared";
+import { orderHomepageVideos } from "@online-video/shared";
+import { createHomepageSettings } from "../modules/site-settings/homepage.js";
 import { MAX_ORGANIZATION_LINKS } from "@online-video/shared";
 import type { RegisteredStorageObjectRef, StorageObjectRef, StorageObjectRepository } from "../core/contracts/index.js";
 import { HttpError } from "../core/errors.js";
@@ -176,7 +178,7 @@ export function createLibraryPersistence(database: AppDatabase, now: () => Date,
 export function createCatalogPersistence(database: AppDatabase, library: ReturnType<typeof createLibraryPersistence>, findVideo: (owner: string, id: string) => Promise<import("../core/contracts/index.js").VideoRecord | null>, now: () => Date, config?: LibraryConfig) {
   const db = database.client;
   return {
-    list: async (ownerId: string, query: VideoListQuery) => {
+    list: async (ownerId: string, query: VideoListQuery, loginSessionId?: string) => {
       const page = query.page ?? 1; const pageSize = query.pageSize ?? 24;
       if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100 || (query.q !== undefined && (typeof query.q !== "string" || query.q.length > 256))) throw new HttpError("VALIDATION_ERROR");
       const where = ["v.owner_id=?"]; const params: (string | number)[] = [ownerId];
@@ -193,7 +195,14 @@ export function createCatalogPersistence(database: AppDatabase, library: ReturnT
         for (const id of organizationIds(raw.split(","))) { where.push(`EXISTS(SELECT 1 FROM video_${kind}_links l WHERE l.owner_id=v.owner_id AND l.video_id=v.id AND l.${kind}_id=? AND l.removed_at IS NULL)`); params.push(id); }
       }
       const condition = where.join(" AND "); const total = (db.prepare(`SELECT count(*) total FROM videos v WHERE ${condition}`).get(...params) as { total: number }).total;
-      const ids = db.prepare(`SELECT v.id FROM videos v WHERE ${condition} ORDER BY v.created_at DESC,v.id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as { id: string }[];
+      const settings = createHomepageSettings(database).preferences(ownerId);
+      const seed = settings.categoryRandomEnabled && !query.categoryId && !query.q && !query.tags && !query.groupIds && !query.tagIds ? loginSessionId : undefined;
+      let ids: { id: string }[];
+      if (settings.videoOrder.length || seed) {
+        const candidates = db.prepare(`SELECT v.id,v.category_id categoryId FROM videos v WHERE ${condition} ORDER BY v.created_at DESC,v.id DESC`).all(...params) as { id: string; categoryId: string }[];
+        const categories = config?.categories.filter(category => category.enabled !== false).map(category => category.id) ?? (db.prepare("SELECT id FROM categories WHERE owner_id=? AND archived_at IS NULL ORDER BY sort_order,created_at,id").all(ownerId) as { id: string }[]).map(category => category.id);
+        ids = orderHomepageVideos(candidates, settings.videoOrder, categories, seed).slice((page - 1) * pageSize, page * pageSize);
+      } else ids = db.prepare(`SELECT v.id FROM videos v WHERE ${condition} ORDER BY v.created_at DESC,v.id DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as { id: string }[];
       const items = await Promise.all(ids.map(async row => (await findVideo(ownerId, row.id))!.video)); return { items, total, page, pageSize };
     },
     update: async (ownerId: string, videoId: string, patch: UpdateVideoRequest) => {

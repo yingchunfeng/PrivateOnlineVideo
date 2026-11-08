@@ -4,3 +4,4 @@ export * from "./email.js";
 export * from "./installation.js";
 export * from "./site-settings.js";
 export * from "./guests.js";
+export * from "./homepage.js";

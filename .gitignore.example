@@ -1,4 +1,7 @@
+# 首次克隆后先复制为 .gitignore；不要覆盖已有本机规则。
+# 本模板可提交，实际 .gitignore 只留本机；忽略不会取消已有文件的跟踪。
 node_modules/
+/.gitignore
 dist/
 .npm-cache/
 .vscode/
@@ -10,6 +13,10 @@ dist/
 !apps/web/.env.mock
 *.db
 *.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
 *.log
 config/library.json.backup.*.json
 # 真实样例与截图只留本机，不纳入代码或发布产物。
@@ -39,6 +46,22 @@ account-recovery-*.json
 *.pfx
 id_rsa
 id_ed25519
+/secrets/
+/backups/
+.envrc
+.netrc
+_netrc
+.npmrc.local
+*.key
+*.keystore
+*.jks
+*.dump
+*.bak
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # 本地需求、阶段计划、原型及交接记录；已跟踪文件需另行确认取消跟踪。
 /docs/archive/
@@ -58,6 +81,14 @@ test-results/
 
 # 专用实云验收依赖本机历史授权；常规回归源码和构建依赖继续跟踪。
 /apps/web/test/stage2-real-oss.test.ts
+# 绑定本机账号、真实媒体域名或历史授权样例的一次性验收脚本。
+/apps/api/scripts/simple-oss-audit.ts
+/apps/api/scripts/simple-oss-browser.ts
+/apps/api/scripts/simple-oss-real-api.ts
+/apps/api/scripts/stage2-cloud-preflight.ts
+/apps/api/scripts/stage2-real-api.ts
+/apps/api/scripts/stage2-upload-samples.ts
+/apps/api/scripts/video-upgrade-acceptance.ts
 /apps/web/test/output/
 /apps/web/test/reports/
 /apps/web/test/artifacts/
