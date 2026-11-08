@@ -14,6 +14,60 @@ import { OrbitIllustration } from "../space-console";
 import { VIDEO_DURATION_SAVED } from "../media-duration";
 import { LibraryEncouragement } from "./library-encouragement";
 import { buildLibraryFeed, selectEncouragementMessages } from "./library-feed";
+import { useSpaceMotion } from "../space-motion";
+
+function LibraryVideoTags({ tags }: { tags: string[] | undefined }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const { reduced } = useSpaceMotion();
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || !tags?.length || reduced) return;
+    let frame = 0; let previous = 0; let position = row.scrollLeft; let direction = 1; let limit = 0; let holdUntil = 0;
+    let visible = false; let touching = false;
+    let hovered = window.matchMedia("(hover: hover)").matches && row.matches(":hover");
+    const canRun = () => visible && !document.hidden && !hovered && !touching && !row.matches(":focus-within") && limit > 1;
+    const step = (now: number) => {
+      if (!canRun()) { frame = 0; return; }
+      const elapsed = previous ? Math.min(now - previous, 64) : 0; previous = now;
+      if (now >= holdUntil) {
+        // 保留小数位置，避免低速滚动在高刷新率屏幕上因像素取整而停住。
+        position = Math.max(0, Math.min(limit, position + direction * elapsed * .024));
+        row.scrollLeft = position;
+        if (position === 0 || position === limit) { direction *= -1; holdUntil = now + 900; }
+      } else position = row.scrollLeft;
+      frame = requestAnimationFrame(step);
+    };
+    const sync = () => {
+      cancelAnimationFrame(frame); frame = 0; previous = 0;
+      position = row.scrollLeft; limit = Math.max(0, row.scrollWidth - row.clientWidth);
+      if (position >= limit) direction = -1; else if (position <= 0) direction = 1;
+      holdUntil = performance.now() + 900;
+      if (canRun()) frame = requestAnimationFrame(step);
+    };
+    const enter = (event: PointerEvent) => { if (event.pointerType === "mouse") { hovered = true; sync(); } };
+    const leave = (event: PointerEvent) => { if (event.pointerType === "mouse") { hovered = false; sync(); } };
+    const press = () => { touching = true; sync(); };
+    const release = () => { if (touching) { touching = false; sync(); } };
+    const wheel = () => { holdUntil = performance.now() + 1800; };
+    const resize = new ResizeObserver(sync); resize.observe(row);
+    if (row.firstElementChild) resize.observe(row.firstElementChild);
+    const intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync(); }); intersection.observe(row);
+    row.addEventListener("pointerenter", enter); row.addEventListener("pointerleave", leave);
+    row.addEventListener("pointerdown", press); row.addEventListener("wheel", wheel, { passive: true });
+    row.addEventListener("focusin", sync); row.addEventListener("focusout", sync);
+    window.addEventListener("pointerup", release); window.addEventListener("pointercancel", release);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      cancelAnimationFrame(frame); resize.disconnect(); intersection.disconnect();
+      row.removeEventListener("pointerenter", enter); row.removeEventListener("pointerleave", leave);
+      row.removeEventListener("pointerdown", press); row.removeEventListener("wheel", wheel);
+      row.removeEventListener("focusin", sync); row.removeEventListener("focusout", sync);
+      window.removeEventListener("pointerup", release); window.removeEventListener("pointercancel", release);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [tags, reduced]);
+  return <div ref={rowRef} className="library-card-tags" role="group" aria-label="视频标签，超出时自动滚动，悬停或聚焦暂停" tabIndex={tags?.length ? 0 : undefined}><TagBadges tags={tags ?? []} /></div>;
+}
 
 function LibraryVideoCard({ video, categoryName, library, roomy }: { video: VideoSummary; categoryName: string; library: PublicMediaPolicy | undefined; roomy: boolean }) {
   const path = `/videos/${encodeURIComponent(video.id)}`;
@@ -22,7 +76,7 @@ function LibraryVideoCard({ video, categoryName, library, roomy }: { video: Vide
     <div className="card-body">
       <div className="card-meta"><span>{categoryName}</span><span>{videoDuration(video.durationSeconds)}</span></div>
       <h2 className="library-card-title"><Link className="video-card-title-link" to={path} title={video.title}>{video.title}</Link></h2>
-      <div className="library-card-tags"><TagBadges tags={video.tags?.slice(0, 2) ?? []} />{video.tags && video.tags.length > 2 && <span className="library-tag-overflow" title={video.tags.join("、")} aria-label={`另有 ${video.tags.length - 2} 个标签`}>+{video.tags.length - 2}</span>}</div>
+      <LibraryVideoTags tags={video.tags} />
       <div className="card-meta library-card-size"><span>{bytes(video.sizeBytes)}</span></div>
     </div>
   </article>;

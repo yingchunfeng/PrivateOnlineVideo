@@ -95,6 +95,68 @@ test("首页自适应卡片、访客有效期及上传页导入在浅深色和�
   await server.listen(); const browser = await chromium.launch({ channel: "msedge", headless: true });
   try {
     const address = server.httpServer?.address(); if (!address || typeof address === "string") throw new Error("隔离服务未监听"); const origin = `http://127.0.0.1:${address.port}`;
+    await t.test("标签按可用宽度展示，超出后单行滚动且不撑宽卡片", async () => {
+      for (const view of [{ width: 1440, theme: "light" }, { width: 1440, theme: "dark" }, { width: 375, theme: "light" }, { width: 320, theme: "dark" }]) {
+        const context = await browser.newContext({ viewport: { width: view.width, height: 900 }, reducedMotion: "reduce" });
+        try {
+          await context.addInitScript(theme => localStorage.setItem("ov.theme.v1", theme), view.theme);
+          const videos = originalVideos().slice(0, 5);
+          videos[0]!.tags = ["旅行", "家人", "夜景"];
+          videos[1]!.tags = Array.from({ length: 20 }, (_, index) => `标签 ${index + 1}`);
+          videos[2]!.tags = ["这是一个需要横向滚动才能完整查看的很长标签".repeat(3)];
+          videos[3]!.tags = []; videos[4]!.tags = ["旅行"];
+          await fixture(context, videos); const page = await context.newPage(); await page.goto(origin);
+          await expect(page.locator(".video-card")).toHaveCount(videos.length);
+          await expect(page.locator(".library-tag-overflow")).toHaveCount(0);
+          const rows = page.locator(".library-card-tags");
+          await expect(rows.first().locator(".badge")).toHaveText(videos[0]!.tags.map(tag => `#${tag}`));
+          if (view.width > 600) assert.equal(await rows.first().evaluate(node => node.scrollWidth <= node.clientWidth), true, "空间足够时三个标签应直接展示");
+          for (const index of [1, 2]) {
+            const row = rows.nth(index); await expect(row.locator(".badge")).toHaveCount(videos[index]!.tags!.length);
+            const geometry = await row.evaluate(node => {
+              const badges = [...node.querySelectorAll(".badge")].map(badge => badge.getBoundingClientRect());
+              return { overflow: node.scrollWidth > node.clientWidth, tops: badges.map(badge => badge.top), clipped: badges.some(badge => badge.height > node.clientHeight + 1), mode: getComputedStyle(node).overflowX };
+            });
+            assert.equal(geometry.overflow, true); assert.equal(geometry.mode, "auto"); assert.equal(new Set(geometry.tops).size, 1, "标签不得换行"); assert.equal(geometry.clipped, false, "标签边框和文字不得被纵向裁切");
+            await row.focus(); await page.keyboard.press("ArrowRight");
+            await expect.poll(() => row.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+            await row.evaluate(node => node.scrollTo({ left: node.scrollWidth, behavior: "instant" }));
+            const end = await row.evaluate(node => ({ edge: node.getBoundingClientRect().right, last: node.querySelector(".badge:last-child")!.getBoundingClientRect().right }));
+            assert.ok(Math.abs(end.last - end.edge) <= 1, "滚动到末尾后应能看到最后一个标签的末端");
+          }
+          const widths = (await cardPositions(page)).map(card => card.width); assert.equal(new Set(widths).size, 1, "多标签和超长标签不能撑宽卡片");
+          await noOverflow(page); await page.screenshot({ path: join(evidenceRoot, `tags-${view.width}-${view.theme}.png`), fullPage: false });
+        } finally { await context.close(); }
+      }
+    });
+    await t.test("溢出标签无需操作即可往返滚动，悬停、聚焦及减少动效时暂停", async () => {
+      for (const view of [{ width: 1440, theme: "light" }, { width: 375, theme: "dark" }]) {
+        const context = await browser.newContext({ viewport: { width: view.width, height: 900 }, reducedMotion: "no-preference" });
+        try {
+          await context.addInitScript(theme => localStorage.setItem("ov.theme.v1", theme), view.theme);
+          const videos = originalVideos().slice(0, 2);
+          videos[0]!.tags = ["甲", "乙", "丙"]; videos[1]!.tags = ["旅行", "家人", "夜景", "美食", "周末", "日常"];
+          await fixture(context, videos); const page = await context.newPage(); await page.goto(origin);
+          const rows = page.locator(".library-card-tags"); const row = rows.nth(1);
+          await expect(row.locator(".badge")).toHaveCount(6); await row.scrollIntoViewIfNeeded(); await page.mouse.move(0, 0);
+          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeGreaterThan(12);
+          assert.equal(await rows.first().evaluate(node => node.scrollLeft), 0, "能够放下的标签不能自动滚动");
+          await row.hover(); const hovered = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
+          assert.equal(await row.evaluate(node => node.scrollLeft), hovered, "悬停时必须暂停");
+          await row.focus(); await page.mouse.move(0, 0); const focused = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
+          assert.equal(await row.evaluate(node => node.scrollLeft), focused, "键盘聚焦时必须暂停");
+          const limit = await row.evaluate(node => { const limit = node.scrollWidth - node.clientWidth; node.scrollLeft = limit - 4; return limit; });
+          await row.evaluate(node => (node as HTMLElement).blur());
+          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeGreaterThanOrEqual(limit - 1);
+          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeLessThan(limit - 12);
+          await page.emulateMedia({ reducedMotion: "reduce" }); await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off"); const reduced = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
+          assert.equal(await row.evaluate(node => node.scrollLeft), reduced, "减少动态效果时应保留手动滚动而关闭自动滚动");
+          await page.emulateMedia({ reducedMotion: "no-preference" });
+          await expect.poll(async () => Math.abs(await row.evaluate(node => node.scrollLeft) - reduced), { timeout: 5000 }).toBeGreaterThan(8);
+          await noOverflow(page);
+        } finally { await context.close(); }
+      }
+    });
     await t.test("独立寄语卡片：首行对齐、随机三条循环、隐藏暂停入口与静态模式、桌面不插卡", async () => {
       for (const theme of ["light", "dark"]) {
         const context = await browser.newContext({ viewport: { width: 375, height: 812 }, reducedMotion: "reduce" });
@@ -323,12 +385,12 @@ test("首页自适应卡片、访客有效期及上传页导入在浅深色和�
         await noOverflow(page);
         const cards = await page.locator(".video-card").evaluateAll(nodes => nodes.map(node => {
           const bounds = node.getBoundingClientRect(); const title = node.querySelector("h2")!; const cover = node.querySelector(".thumbnail-wrapper")!.getBoundingClientRect(); const css = getComputedStyle(title); const body = node.querySelector(".card-body")!;
-          return { width: bounds.width, height: bounds.height, titleHeight: title.getBoundingClientRect().height, font: Number.parseFloat(css.fontSize), line: Number.parseFloat(css.lineHeight), aspect: cover.width / cover.height, tags: node.querySelectorAll(".badge").length, contentOverflow: body.scrollHeight - body.clientHeight, hasActions: !!node.querySelector(".video-card-actions") };
+          return { id: node.querySelector(".video-card-preview")!.getAttribute("href")!.split("/").pop(), width: bounds.width, height: bounds.height, titleHeight: title.getBoundingClientRect().height, font: Number.parseFloat(css.fontSize), line: Number.parseFloat(css.lineHeight), aspect: cover.width / cover.height, tags: node.querySelectorAll(".badge").length, contentOverflow: body.scrollHeight - body.clientHeight, hasActions: !!node.querySelector(".video-card-actions") };
         }));
         const compact = view.width <= 600;
         for (const card of cards) {
           assert.equal(card.hasActions, false, "卡片不应再有操作按钮，点击卡片直接进入详情");
-          assert.ok(Math.abs(card.aspect - 16 / 9) < .02); assert.ok(card.titleHeight <= card.line * (compact ? 2 : 1) + 1); assert.ok(card.tags <= 2);
+          assert.ok(Math.abs(card.aspect - 16 / 9) < .02); assert.ok(card.titleHeight <= card.line * (compact ? 2 : 1) + 1); assert.equal(card.tags, data.videos.find(video => video.id === card.id)!.tags!.length, "首页应保留全部标签");
           assert.ok(card.contentOverflow <= 1, "卡片内容不得溢出");
           if (compact) assert.ok(card.font >= 13 && card.font <= 14);
         }
