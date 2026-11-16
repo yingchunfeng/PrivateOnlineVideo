@@ -158,7 +158,38 @@ test("分类标签CRUD同步首页、播放旁编辑分类标签后筛选命中"
   } finally { await browser.close(); await server.close(); }
 });
 
-test("文件与文件夹分开追加视频、嵌套目录过滤、分页编辑和桌面一屏布局", { timeout: 90000 }, async t => {
+test("选文件返回触发配置刷新时仍能加入列表，取消和重复选择不丢文件", { timeout: 60000 }, async () => {
+  const { server, browser, origin } = await openBrowser();
+  let release: (() => void) | undefined;
+  try {
+    const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: "reduce" });
+    const fixture = await installFixture(context); const page = await context.newPage();
+    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+    await page.goto(`${origin}/upload`);
+    const input = page.getByLabel("视频文件", { exact: true });
+    const trigger = page.getByRole("button", { name: "选择视频文件", exact: true });
+    await expect(trigger).toBeEnabled();
+    const refreshing = new Promise<void>(resolve => { release = resolve; });
+    let refreshRequests = 0;
+    await context.route(/\/api\/(library|settings\/limits)$/, async route => { refreshRequests++; await refreshing; await route.fallback(); });
+    const choosing = page.waitForEvent("filechooser"); await trigger.click(); const chooser = await choosing;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => refreshRequests).toBe(2);
+    await expect(page.getByRole("button", { name: "导入已有视频", exact: true })).toBeDisabled();
+    const file = { name: "repeat.webm", mimeType: "video/webm", buffer: fixture.media };
+    await chooser.setFiles([file]);
+    await expect(page.locator(".pending-upload-row")).toHaveCount(1);
+    await expect(input).toHaveValue("");
+    await input.setInputFiles([file]); await expect(page.locator(".pending-upload-row")).toHaveCount(2);
+    await input.setInputFiles([]); await expect(page.locator(".pending-upload-row")).toHaveCount(2);
+    release?.();
+    await expect(page.getByRole("button", { name: "导入已有视频", exact: true })).toBeEnabled();
+    await input.setInputFiles([file]); await expect(page.locator(".pending-upload-row")).toHaveCount(3);
+    assert.deepEqual(errors, []); await context.close();
+  } finally { release?.(); await browser.close(); await server.close(); }
+});
+
+test("文件与文件夹分开追加视频、嵌套目录过滤、完整列表滚动编辑和桌面一屏布局", { timeout: 90000 }, async t => {
   const { server, browser, origin } = await openBrowser();
   try {
     await mkdir(evidenceRoot, { recursive: true });
@@ -179,27 +210,32 @@ test("文件与文件夹分开追加视频、嵌套目录过滤、分页编辑�
     await expect(page.locator(".upload-source-note")).toContainText("已跳过 1 个非视频文件");
     const divider = await page.locator(".folder-source").evaluate(node => getComputedStyle(node, "::before").width); assert.equal(divider, "1px");
     await expect(page.getByLabel("视频文件夹", { exact: true })).toHaveAttribute("webkitdirectory", "");
-    await expect(page.getByRole("button", { name: "下一页", exact: true })).toBeEnabled();
-    await page.getByLabel("视频标题", { exact: true }).fill("单独文件标题"); await page.getByRole("button", { name: "下一页", exact: true }).click();
-    await page.locator(".pending-upload-choice").first().click(); await page.getByLabel("视频标题", { exact: true }).fill("文件夹视频标题");
-    await page.getByRole("button", { name: "上一页", exact: true }).click(); await page.locator(".pending-upload-choice").filter({ hasText: "manual.webm" }).click();
+    await expect(page.getByRole("navigation", { name: "待上传视频分页", exact: true })).toHaveCount(0);
+    await expect(page.locator(".pending-upload-row")).toHaveCount(9);
+    const list = page.getByRole("region", { name: "待上传视频，滚动查看全部", exact: true });
+    assert.ok(await list.evaluate(node => node.scrollHeight > node.clientHeight), "全部条目应在列表内部滚动");
+    await page.getByLabel("视频标题", { exact: true }).fill("单独文件标题");
+    await page.locator(".pending-upload-choice").last().click(); await page.getByLabel("视频标题", { exact: true }).fill("文件夹视频标题");
+    assert.ok(await list.evaluate(node => node.scrollTop > 0), "最后一项应可滚动到并编辑");
+    await page.locator(".pending-upload-choice").filter({ hasText: "manual.webm" }).click();
     await expect(page.getByLabel("视频标题", { exact: true })).toHaveValue("单独文件标题");
     await noDesktopScroll(page, "upload-folder-1366"); await page.setViewportSize({ width: 1440, height: 900 }); await noDesktopScroll(page, "upload-folder-1440");
     await page.setViewportSize({ width: 1280, height: 720 }); await noDesktopScroll(page, "upload-folder-1280");
     await page.setViewportSize({ width: 1366, height: 640 }); await noDesktopScroll(page, "upload-folder-short");
     await page.getByLabel("视频文件", { exact: true }).setInputFiles([{ name: "bad.txt", mimeType: "text/plain", buffer: Buffer.from("invalid") }]);
-    while (await page.getByRole("button", { name: "下一页", exact: true }).isEnabled()) await page.getByRole("button", { name: "下一页", exact: true }).click();
     await page.locator(".pending-upload-choice").filter({ hasText: "bad.txt" }).click(); await expect(page.locator(".upload-validation-notice")).toContainText("仅支持");
     await expect(page.locator(".pending-upload-row").filter({ hasText: "bad.txt" }).getByRole("button", { name: "选择封面", exact: true })).toBeDisabled();
     await noDesktopScroll(page, "upload-invalid-short");
     const noVideos = join(evidenceRoot, "non-video-folder"); await mkdir(noVideos); await writeFile(join(noVideos, "notes.txt"), "非视频", "utf8");
     await page.getByLabel("视频文件夹", { exact: true }).setInputFiles(noVideos); await expect(page.locator(".upload-source-note")).toContainText("没有支持的视频"); await expect(page.locator(".pending-upload-panel")).toContainText("10 项");
     await page.getByLabel("视频文件夹", { exact: true }).setInputFiles(folder); await expect(page.locator(".pending-upload-panel")).toContainText("18 项");
+    await expect(page.locator(".pending-upload-row")).toHaveCount(18);
     await noDesktopScroll(page, "upload-repeat-folder-short");
     await page.setViewportSize({ width: 390, height: 844 }); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await expect(page.locator('.pending-upload-choice[aria-pressed="true"]')).toHaveCount(1);
     while (await page.getByRole("button", { name: "关闭消息", exact: true }).count()) await page.getByRole("button", { name: "关闭消息", exact: true }).first().click();
-    await page.getByRole("button", { name: "上一页", exact: true }).scrollIntoViewIfNeeded(); await expect(page.getByRole("button", { name: "上一页", exact: true })).toBeVisible();
+    await page.locator(".pending-upload-choice").last().click(); await expect(page.locator(".pending-upload-choice").last()).toHaveAttribute("aria-pressed", "true");
+    assert.ok(await list.evaluate(node => node.scrollTop > 0), "手机端也应能滚动查看最后一项");
     await page.screenshot({ path: join(evidenceRoot, "upload-mobile-390.png"), fullPage: true });
     assert.deepEqual(errors, []);
     t.diagnostic(`文件夹及布局证据：${evidenceRoot}`); await context.close();

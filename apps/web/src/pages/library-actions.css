@@ -36,6 +36,7 @@
 .library-card-tags { display: flex; align-items: center; gap: 4px; min-width: 0; height: 22px; flex-shrink: 0; margin-bottom: 2px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; }
 .library-card-tags::-webkit-scrollbar { display: none; }
 .library-card-tags:focus-visible { outline-offset: -2px; }
+.library-card-tags-copy { display: flex; flex: 0 0 auto; align-items: center; }
 .library-card-tags .organization-badges { display: flex; flex: 0 0 auto; flex-wrap: nowrap; min-width: 0; margin: 0; }
 .library-card-tags .organization-badges .badge { flex: 0 0 auto; max-width: none; white-space: nowrap; line-height: 1; }
 .library-page .card-meta { flex-wrap: nowrap; flex-shrink: 0; min-height: 1.4em; line-height: 1.4; gap: 6px; }

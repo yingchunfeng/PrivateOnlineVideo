@@ -129,30 +129,43 @@ test("首页自适应卡片、访客有效期及上传页导入在浅深色和�
         } finally { await context.close(); }
       }
     });
-    await t.test("溢出标签无需操作即可往返滚动，悬停、聚焦及减少动效时暂停", async () => {
+    await t.test("溢出标签低速从右向左连续滚动，无缝循环且悬停、聚焦及减少动效时暂停", async () => {
       for (const view of [{ width: 1440, theme: "light" }, { width: 375, theme: "dark" }]) {
         const context = await browser.newContext({ viewport: { width: view.width, height: 900 }, reducedMotion: "no-preference" });
         try {
           await context.addInitScript(theme => localStorage.setItem("ov.theme.v1", theme), view.theme);
           const videos = originalVideos().slice(0, 2);
-          videos[0]!.tags = ["甲", "乙", "丙"]; videos[1]!.tags = ["旅行", "家人", "夜景", "美食", "周末", "日常"];
+          videos[0]!.tags = ["甲", "乙", "丙"]; videos[1]!.tags = Array.from({ length: 12 }, (_, index) => `标签${index + 1}`);
           await fixture(context, videos); const page = await context.newPage(); await page.goto(origin);
           const rows = page.locator(".library-card-tags"); const row = rows.nth(1);
-          await expect(row.locator(".badge")).toHaveCount(6); await row.scrollIntoViewIfNeeded(); await page.mouse.move(0, 0);
-          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeGreaterThan(12);
+          const badges = row.locator(":scope > .organization-badges .badge");
+          await expect(badges).toHaveCount(12); await row.scrollIntoViewIfNeeded(); await page.mouse.move(0, 0);
+          await expect(row.locator(".library-card-tags-copy")).toHaveAttribute("aria-hidden", "true");
+          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 3000 }).toBeGreaterThan(8);
+          const initial = await badges.first().evaluate(node => node.getBoundingClientRect().left);
+          await page.waitForTimeout(600); const moved = initial - await badges.first().evaluate(node => node.getBoundingClientRect().left);
+          assert.ok(moved >= 6 && moved <= 20, `标签应以低速持续向左移动，而非翻页或快速扫动：${moved}px`);
           assert.equal(await rows.first().evaluate(node => node.scrollLeft), 0, "能够放下的标签不能自动滚动");
+          await expect(rows.first().locator(".library-card-tags-copy")).toHaveCount(0);
           await row.hover(); const hovered = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
           assert.equal(await row.evaluate(node => node.scrollLeft), hovered, "悬停时必须暂停");
           await row.focus(); await page.mouse.move(0, 0); const focused = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
           assert.equal(await row.evaluate(node => node.scrollLeft), focused, "键盘聚焦时必须暂停");
-          const limit = await row.evaluate(node => { const limit = node.scrollWidth - node.clientWidth; node.scrollLeft = limit - 4; return limit; });
+          const seam = await row.evaluate(node => {
+            const original = node.firstElementChild!;
+            const width = original.getBoundingClientRect().width + parseFloat(getComputedStyle(node).columnGap);
+            node.scrollLeft = width - 3;
+            return { width, left: node.querySelector(".library-card-tags-copy .badge")!.getBoundingClientRect().left };
+          });
           await row.evaluate(node => (node as HTMLElement).blur());
-          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeGreaterThanOrEqual(limit - 1);
-          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 5000 }).toBeLessThan(limit - 12);
+          await expect.poll(() => row.evaluate(node => node.scrollLeft), { timeout: 2000 }).toBeLessThan(12);
+          const wrapped = seam.left - await badges.first().evaluate(node => node.getBoundingClientRect().left);
+          assert.ok(wrapped >= 0 && wrapped < 25, `循环衔接时标签应继续向左，不能跳动或回扫：${wrapped}px，周期${seam.width}px`);
           await page.emulateMedia({ reducedMotion: "reduce" }); await expect(page.locator("html")).toHaveAttribute("data-space-motion", "off"); const reduced = await row.evaluate(node => node.scrollLeft); await page.waitForTimeout(250);
+          await expect(row.locator(".library-card-tags-copy")).toHaveCount(0);
           assert.equal(await row.evaluate(node => node.scrollLeft), reduced, "减少动态效果时应保留手动滚动而关闭自动滚动");
           await page.emulateMedia({ reducedMotion: "no-preference" });
-          await expect.poll(async () => Math.abs(await row.evaluate(node => node.scrollLeft) - reduced), { timeout: 5000 }).toBeGreaterThan(8);
+          await expect.poll(async () => Math.abs(await row.evaluate(node => node.scrollLeft) - reduced), { timeout: 3000 }).toBeGreaterThan(8);
           await noOverflow(page);
         } finally { await context.close(); }
       }

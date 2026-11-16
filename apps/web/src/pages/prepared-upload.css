@@ -213,8 +213,14 @@
 
 .prepared-upload-page .pending-upload-list {
   gap: 6px;
-  max-height: none;
-  overflow: visible;
+  min-height: 0;
+  max-height: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
 }
 
 .prepared-upload-page .pending-upload-row {
@@ -291,27 +297,6 @@
 
 .prepared-upload-page .pending-upload-choice img { object-fit: contain; }
 
-.pending-upload-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 8px;
-  font-size: .75rem;
-}
-
-.pending-upload-pagination > div {
-  display: flex;
-  gap: 6px;
-}
-
-.prepared-upload-page .pending-upload-pagination button {
-  min-height: 32px;
-  padding: 4px 10px;
-  font-size: .75rem;
-}
-
 .pending-upload-empty {
   flex: 1;
   display: flex;
@@ -338,6 +323,7 @@
   .prepared-upload-page .upload-sci-left .local-cover-image { position: absolute; inset: 0; object-fit: contain; }
   .prepared-upload-page .pending-upload-panel .cover-preview-header > span { display: flex; align-items: center; gap: 8px; }
   .prepared-upload-page .pending-upload-panel .cover-preview-header .text-link { min-height: 32px; }
+  .prepared-upload-page .pending-upload-list { flex: 1; max-height: none; }
   main:has(> .prepared-upload-page) {
     min-height: 0;
     padding-top: 20px;
@@ -503,8 +489,7 @@
   .prepared-upload-page .upload-tag-pagination button,
   .prepared-upload-page .upload-apply-metadata,
   .prepared-upload-page .pending-upload-cover,
-  .prepared-upload-page .pending-upload-remove,
-  .prepared-upload-page .pending-upload-pagination button {
+  .prepared-upload-page .pending-upload-remove {
     min-height: 44px;
   }
 
@@ -527,9 +512,5 @@
 
   .pending-upload-title strong {
     max-width: 100%;
-  }
-
-  .pending-upload-pagination {
-    flex-wrap: wrap;
   }
 }

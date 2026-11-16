@@ -18,39 +18,43 @@ import { useSpaceMotion } from "../space-motion";
 
 function LibraryVideoTags({ tags }: { tags: string[] | undefined }) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const [looping, setLooping] = useState(false);
   const { reduced } = useSpaceMotion();
   useEffect(() => {
     const row = rowRef.current;
-    if (!row || !tags?.length || reduced) return;
-    let frame = 0; let previous = 0; let position = row.scrollLeft; let direction = 1; let limit = 0; let holdUntil = 0;
+    const content = row?.firstElementChild;
+    if (!row || !content || !tags?.length || reduced) return;
+    let frame = 0; let previous = 0; let position = row.scrollLeft; let loopWidth = 0; let holdUntil = 0;
+    let overflowing = false;
     let visible = false; let touching = false;
     let hovered = window.matchMedia("(hover: hover)").matches && row.matches(":hover");
-    const canRun = () => visible && !document.hidden && !hovered && !touching && !row.matches(":focus-within") && limit > 1;
+    const canRun = () => overflowing && visible && !document.hidden && !hovered && !touching && !row.matches(":focus-within");
     const step = (now: number) => {
       if (!canRun()) { frame = 0; return; }
       const elapsed = previous ? Math.min(now - previous, 64) : 0; previous = now;
       if (now >= holdUntil) {
-        // 保留小数位置，避免低速滚动在高刷新率屏幕上因像素取整而停住。
-        position = Math.max(0, Math.min(limit, position + direction * elapsed * .024));
+        // 用相同副本衔接循环，保持小数位置，始终向左移动且不出现反向回扫。
+        position = (position + elapsed * .02) % loopWidth;
         row.scrollLeft = position;
-        if (position === 0 || position === limit) { direction *= -1; holdUntil = now + 900; }
       } else position = row.scrollLeft;
       frame = requestAnimationFrame(step);
     };
     const sync = () => {
       cancelAnimationFrame(frame); frame = 0; previous = 0;
-      position = row.scrollLeft; limit = Math.max(0, row.scrollWidth - row.clientWidth);
-      if (position >= limit) direction = -1; else if (position <= 0) direction = 1;
-      holdUntil = performance.now() + 900;
+      overflowing = content.getBoundingClientRect().width > row.clientWidth + 1;
+      loopWidth = content.getBoundingClientRect().width + (parseFloat(getComputedStyle(row).columnGap) || 0);
+      setLooping(overflowing);
+      if (!overflowing) row.scrollLeft = 0;
+      position = row.scrollLeft;
       if (canRun()) frame = requestAnimationFrame(step);
     };
     const enter = (event: PointerEvent) => { if (event.pointerType === "mouse") { hovered = true; sync(); } };
     const leave = (event: PointerEvent) => { if (event.pointerType === "mouse") { hovered = false; sync(); } };
     const press = () => { touching = true; sync(); };
     const release = () => { if (touching) { touching = false; sync(); } };
-    const wheel = () => { holdUntil = performance.now() + 1800; };
+    const wheel = () => { holdUntil = performance.now() + 1600; };
     const resize = new ResizeObserver(sync); resize.observe(row);
-    if (row.firstElementChild) resize.observe(row.firstElementChild);
+    resize.observe(content);
     const intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; sync(); }); intersection.observe(row);
     row.addEventListener("pointerenter", enter); row.addEventListener("pointerleave", leave);
     row.addEventListener("pointerdown", press); row.addEventListener("wheel", wheel, { passive: true });
@@ -66,7 +70,7 @@ function LibraryVideoTags({ tags }: { tags: string[] | undefined }) {
       document.removeEventListener("visibilitychange", sync);
     };
   }, [tags, reduced]);
-  return <div ref={rowRef} className="library-card-tags" role="group" aria-label="视频标签，超出时自动滚动，悬停或聚焦暂停" tabIndex={tags?.length ? 0 : undefined}><TagBadges tags={tags ?? []} /></div>;
+  return <div ref={rowRef} className="library-card-tags" role="group" aria-label="视频标签，超出时从右向左自动滚动，悬停或聚焦暂停" tabIndex={tags?.length ? 0 : undefined}><TagBadges tags={tags ?? []} />{looping && !reduced && !!tags?.length && <div className="library-card-tags-copy" aria-hidden="true"><TagBadges tags={tags} /></div>}</div>;
 }
 
 function LibraryVideoCard({ video, categoryName, library, roomy }: { video: VideoSummary; categoryName: string; library: PublicMediaPolicy | undefined; roomy: boolean }) {

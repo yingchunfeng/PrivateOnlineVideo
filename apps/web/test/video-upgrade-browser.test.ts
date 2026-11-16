@@ -109,7 +109,7 @@ test("手动封面真实解码：取消、区间缓存、微调、独立保存�
     await dialog.getByRole("button", { name: "使用当前画面", exact: true }).click(); await expect(dialog).toHaveCount(0);
     await broken.getByRole("button", { name: "选择封面", exact: true }).click(); await expect(dialog.getByRole("alert")).toContainText("无法解码"); await expect(dialog.getByRole("button", { name: "使用当前画面", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "恢复自动封面", exact: true }).click(); await expect(dialog.getByRole("alert")).toContainText("封面未替换"); assert.equal(await broken.locator("img").count(), 0); await page.keyboard.press("Escape");
-    await page.setViewportSize({ width: 1366, height: 600 }); await page.getByRole("button", { name: "上一页", exact: true }).click(); await open(); await jump(12.3); await expect(dialog.locator(".cover-picker-thumbnails img")).toHaveCount(10); await expect(dialog.getByRole("button", { name: "使用当前画面", exact: true })).toBeInViewport(); await page.waitForTimeout(400); await page.screenshot({ path: join(evidence, "cover-picker-short-window.png") }); await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1366, height: 600 }); await open(); await jump(12.3); await expect(dialog.locator(".cover-picker-thumbnails img")).toHaveCount(10); await expect(dialog.getByRole("button", { name: "使用当前画面", exact: true })).toBeInViewport(); await page.waitForTimeout(400); await page.screenshot({ path: join(evidence, "cover-picker-short-window.png") }); await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 844 }); await open(); await expect(dialog.locator(".cover-picker-thumbnails img")).toHaveCount(10); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.waitForTimeout(400); await page.screenshot({ path: join(evidence, "cover-picker-mobile.png") });
     await dialog.getByRole("button", { name: "前进 0.1 秒", exact: true }).scrollIntoViewIfNeeded(); await expect(dialog.getByRole("button", { name: "前进 0.1 秒", exact: true })).toBeInViewport();
@@ -118,7 +118,7 @@ test("手动封面真实解码：取消、区间缓存、微调、独立保存�
     await broken.getByRole("button", { name: "移出待选 损坏视频.mp4", exact: true }).click();
     const expected = Buffer.from(await page.evaluate(async url => [...new Uint8Array(await (await fetch(url!)).arrayBuffer())], manual));
     await writeFile(join(evidence, "selected-cover.jpg"), expected);
-    await page.getByRole("button", { name: "提交 3 个视频并上传", exact: true }).click(); await expect(page).toHaveURL(/\/tasks$/);
+    await page.getByRole("button", { name: "上传 3 个视频", exact: true }).click(); await expect(page).toHaveURL(/\/tasks$/);
     await expect.poll(() => covers.size).toBe(3); assert.deepEqual(covers.get("manual-0"), expected);
     const failed = page.locator('[data-task-id="manual-0"]'); await failed.getByRole("button", { name: "单独重试保存封面", exact: true }).click(); await expect(failed).toContainText("封面已保存"); assert.deepEqual(covers.get("manual-0"), expected);
     await page.locator(".side-nav-menu").getByRole("link", { name: "上传视频", exact: true }).click(); await expect(page.locator(".pending-upload-cover").first()).toBeDisabled();
