@@ -7,8 +7,10 @@ FROM ${NODE_IMAGE} AS node-base
 WORKDIR /app
 
 FROM node-base AS manifests
-ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
+# 默认切换为清华源，如果清华源慢，你可以通过构建参数切回阿里云
+ARG DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+
 # Bootstrap APT's HTTPS trust from Node's bundled CAs without replacing an existing bundle.
 RUN node -e 'const fs = require("node:fs"); \
     const path = "/etc/ssl/certs/ca-certificates.crt"; \
@@ -16,8 +18,15 @@ RUN node -e 'const fs = require("node:fs"); \
         fs.mkdirSync("/etc/ssl/certs", { recursive: true }); \
         fs.writeFileSync(path, require("node:tls").rootCertificates.join("\n") + "\n", { flag: "wx", mode: 0o644 }); \
     }'
-# Native dependencies must be installed for Linux, not copied from Windows.
-RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+
+# 修改点 1: 关闭 apt 自动删除下载包的行为，保留 .deb 文件以便缓存复用
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/99keep-cache
+
+# 修改点 2: 挂载缓存，并执行 apt-get
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && timeout 180s apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=1 \
         -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
         -o Acquire::https::CAInfo=/etc/ssl/certs/ca-certificates.crt \
@@ -26,11 +35,13 @@ RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/
         -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
         -o Acquire::https::CAInfo=/etc/ssl/certs/ca-certificates.crt \
         install -y --no-install-recommends ca-certificates python3 make g++
+
 RUN npm install --global npm@10.9.4 --registry="${NPM_REGISTRY}"
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
+
 # Compile native addons against this image's headers instead of downloading them again.
 ENV npm_config_nodedir=/usr/local
 RUN test -s /usr/local/include/node/node.h \
